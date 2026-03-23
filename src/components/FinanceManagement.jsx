@@ -1,7 +1,11 @@
-import { useState } from 'react'
-import { DollarSign, TrendingUp, Users, AlertCircle, Download, Send, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { DollarSign, TrendingUp, Users, AlertCircle, Download, Send, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import LoadingSpinner from './ui/LoadingSpinner'
+import SkeletonCard from './ui/SkeletonCard'
+import SkeletonTable from './ui/SkeletonTable'
+import FullScreenLoader from './ui/FullScreenLoader'
 
-// Finance Data
+// Finance Data (mock API response)
 const financeData = {
   monthlyRevenue: 45250,
   outstandingFees: 8450,
@@ -108,47 +112,149 @@ function InvoiceRow({ invoice }) {
 
 // Finance Management Screen
 export default function FinanceScreen() {
-  const maxRevenue = Math.max(...revenueData.map(d => d.revenue))
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [financeStats, setFinanceStats] = useState(null)
+  const [invoicesList, setInvoicesList] = useState([])
+  const [revenueList, setRevenueList] = useState([])
+  const [paymentBreakdownList, setPaymentBreakdownList] = useState([])
+  const maxRevenue = 50000 // For chart scaling
+
+  // Live Supabase queries for finance data
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+
+    const fetchData = async () => {
+      try {
+        // Monthly revenue aggregate
+        const { data: revenueData } = await supabase
+          .rpc('monthly_revenue')
+        
+        // Outstanding invoices
+        const { data: outstanding, count: outstandingCount } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('status', 'pending')
+          .or('status.eq.pending,overdue')
+
+        // Paid today
+        const today = new Date().toISOString().split('T')[0]
+        const { data: paidToday } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('status', 'paid')
+          .eq('paid_date', today)
+        
+        // Parent count
+        const { count: parentCount } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('role', 'PARENT')
+
+        setFinanceStats({
+          monthlyRevenue: revenueData || 0,
+          outstandingFees: outstanding?.reduce((sum, p) => sum + p.amount, 0) || 0,
+          paidToday: paidToday?.reduce((sum, p) => sum + p.amount, 0) || 0,
+          totalParents: parentCount || 0,
+        })
+
+        // Invoices list
+        const { data: invoices } = await supabase
+          .from('payments')
+          .select('*, child:children(full_name), parent:profiles(full_name)')
+          .eq('status', 'in.(pending,overdue)')
+          .order('due_date')
+        
+        setInvoicesList(invoices || [])
+
+        // Revenue chart data
+        const { data: revenueChart } = await supabase
+          .rpc('revenue_last_6_months')
+        setRevenueList(revenueChart || [])
+
+        // Payment breakdown
+        const { data: breakdown } = await supabase
+          .rpc('payment_breakdown')
+        setPaymentBreakdownList(breakdown || [])
+
+      } catch (err) {
+        setError('Failed to load financial data: ' + err.message)
+        console.error('Finance fetch error:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <>
+        <FullScreenLoader message="Loading financial dashboard..." />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 opacity-0">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
+        <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+        <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">Financial Data Unavailable</h3>
+        <p className="text-gray-600 mb-8">{error}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
+        >
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Reload Data
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       {/* Top - Revenue Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 [&>*]:animate-fade-in">
         <StatCard 
           icon={DollarSign} 
           label="Monthly Revenue" 
-          value={`$${financeData.monthlyRevenue.toLocaleString()}`} 
+          value={`$${financeStats?.monthlyRevenue?.toLocaleString() || '0'}`} 
           trend="+8%" 
           trendUp={true} 
           color="green"
-          delay={1}
         />
         <StatCard 
           icon={AlertCircle} 
           label="Outstanding Fees" 
-          value={`$${financeData.outstandingFees.toLocaleString()}`} 
+          value={`$${financeStats?.outstandingFees?.toLocaleString() || '0'}`} 
           trend="-12%" 
           trendUp={true} 
           color="coral"
-          delay={2}
         />
         <StatCard 
           icon={CheckCircle} 
           label="Paid Today" 
-          value={`$${financeData.paidToday.toLocaleString()}`} 
+          value={`$${financeStats?.paidToday?.toLocaleString() || '0'}`} 
           trend="+15%" 
           trendUp={true} 
           color="blue"
-          delay={3}
         />
         <StatCard 
           icon={Users} 
           label="Total Parents" 
-          value={financeData.totalParents} 
+          value={financeStats?.totalParents || 0} 
           trend="+5" 
           trendUp={true} 
           color="purple"
-          delay={4}
         />
       </div>
 
@@ -207,11 +313,17 @@ export default function FinanceScreen() {
             <span className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded-full">{invoicesData.filter(i => i.status === 'overdue').length} overdue</span>
           </div>
           
-          <div className="space-y-1 overflow-y-auto max-h-80">
-            {invoicesData.map((invoice) => (
-              <InvoiceRow key={invoice.id} invoice={invoice} />
-            ))}
-          </div>
+          {invoicesList.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              No outstanding invoices
+            </div>
+          ) : (
+            <div className="space-y-1 overflow-y-auto max-h-80">
+              {invoicesList.map((invoice) => (
+                <InvoiceRow key={invoice.id} invoice={invoice} />
+              ))}
+            </div>
+          )}
           
           <div className="mt-4 pt-4 border-t border-gray-100">
             <div className="flex justify-between text-sm">
@@ -261,7 +373,7 @@ export default function FinanceScreen() {
           <h3 className="font-heading font-bold text-lg text-gray-800 mb-6">Quick Actions</h3>
           
           <div className="space-y-3">
-            <button className="w-full p-4 rounded-xl bg-gradient-to-r from-primary-blue to-blue-400 text-white hover:shadow-lg transition-all flex items-center justify-between group">
+            <button className="w-full p-4 rounded-xl bg-gradient-to-r from-primary-blue to-blue-400 text-white hover:shadow-lg transition-all flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed">
               <div className="flex items-center gap-3">
                 <Download size={20} />
                 <span className="font-medium">Export Monthly Report</span>

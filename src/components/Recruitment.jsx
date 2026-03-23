@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
+import LoadingSpinner from './ui/LoadingSpinner'
+import SkeletonTable from './ui/SkeletonTable'
+import FullScreenLoader from './ui/FullScreenLoader'
+// StatCard is defined inline
 
 
-// Mock Applicant Data
+// Mock Applicant Data (API response)
 const applicantsData = [
   { id: 1, name: 'Emily Watson', position: 'Teacher', experience: '3 years', status: 'pending', applied: '2 days ago', cv: 'Emily Watson - Teacher CV.pdf', notes: 'Strong preschool experience. References checked.', rating: '4.5/5' },
   { id: 2, name: 'Robert Chen', position: 'Nurse', experience: '5 years', status: 'interview', applied: '3 days ago', cv: 'Robert Chen - Nurse CV.pdf', notes: 'First aid certified. Interview scheduled for tomorrow.', rating: '4.8/5' },
@@ -210,13 +214,45 @@ export default function RecruitmentScreen() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedApplicant, setSelectedApplicant] = useState(null)
-  const [applicants, setApplicants] = useState(applicantsData)
-  const [stats, setStats] = useState({
-    total: applicantsData.length,
-    pending: applicantsData.filter(a => a.status === 'pending').length,
-    interview: applicantsData.filter(a => a.status === 'interview').length,
-    hired: applicantsData.filter(a => a.status === 'hired').length,
-  })
+  const [applicants, setApplicants] = useState([])
+  const [stats, setStats] = useState({})
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Live Supabase query - assume 'applicants' table
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+
+    const fetchApplicants = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('applicants')
+          .select(`
+            *,
+            position !inner()
+          `)
+          .order('applied', { ascending: false })
+
+        if (error) throw error
+
+        setApplicants(data || [])
+        setStats({
+          total: data?.length || 0,
+          pending: data?.filter(a => a.status === 'pending').length || 0,
+          interview: data?.filter(a => a.status === 'interview').length || 0,
+          hired: data?.filter(a => a.status === 'hired').length || 0,
+        })
+      } catch (err) {
+        setError('Failed to load applicants: ' + err.message)
+        console.error('Applicants fetch error:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchApplicants()
+  }, [])
 
   const statuses = ['all', 'pending', 'interview', 'hired', 'rejected']
 
@@ -268,19 +304,39 @@ export default function RecruitmentScreen() {
             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
         </div>
-        <button className="btn-gradient-coral px-6 py-2.5 rounded-xl text-white font-semibold shadow-lg whitespace-nowrap flex items-center gap-2">
-          <UserPlus size={18} />
+        <button 
+          className="btn-gradient-coral px-6 py-2.5 rounded-xl text-white font-semibold shadow-lg whitespace-nowrap flex items-center gap-2 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <LoadingSpinner />
+          ) : (
+            <UserPlus size={18} />
+          )}
           Post New Job
         </button>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard icon={UserPlus} label="Total Applicants" value={stats.total} trend="+5" trendUp color="blue" delay={1} />
-        <StatCard icon={Clock} label="Pending Review" value={stats.pending} trend="-2" trendUp={false} color="yellow" delay={2} />
-        <StatCard icon={Calendar} label="Interview Scheduled" value={stats.interview} trend="+3" trendUp color="purple" delay={3} />
-        <StatCard icon={UserCheck} label="Hired" value={stats.hired} trend="+1" trendUp color="green" delay={4} />
-      </div>
+      {isLoading ? (
+        <FullScreenLoader />
+      ) : error ? (
+        <div className="glass-card rounded-3xl p-12 text-center max-w-lg mx-auto">
+          <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+          <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">No Applicants Data</h3>
+          <p className="text-gray-600 mb-8">{error}</p>
+          <button onClick={() => window.location.reload()} className="btn-gradient px-8 py-3 rounded-xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Reload
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 [&>*]:animate-fade-in">
+          <StatCard icon={UserPlus} label="Total Applicants" value={stats.total} trend="+5" trendUp color="blue" />
+          <StatCard icon={Clock} label="Pending Review" value={stats.pending} trend="-2" trendUp={false} color="yellow" />
+          <StatCard icon={Calendar} label="Interview Scheduled" value={stats.interview} trend="+3" trendUp color="purple" />
+          <StatCard icon={UserCheck} label="Hired" value={stats.hired} trend="+1" trendUp color="green" />
+        </div>
+      )}
 
       {/* Applicants Table */}
       <div className="glass-card rounded-card overflow-hidden shadow-lg">
@@ -291,29 +347,35 @@ export default function RecruitmentScreen() {
           </h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50/50">
-              <tr>
-                <th className="py-4 pl-4 text-left text-sm font-semibold text-gray-700">Applicant</th>
-                <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Position</th>
-                <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Experience</th>
-                <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Status</th>
-                <th className="py-4 pr-4 text-right text-sm font-semibold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredApplicants.map((applicant) => (
-                <ApplicantRow key={applicant.id} applicant={applicant} onView={setSelectedApplicant} />
-              ))}
-            </tbody>
-          </table>
+          {isLoading ? (
+            <SkeletonTable rows={6} />
+          ) : filteredApplicants.length === 0 ? (
+            <div className="text-center py-16">
+              <FileText size={64} className="mx-auto text-gray-300 mb-6" />
+              <h3 className="font-heading text-2xl font-bold text-gray-800 mb-3">No Matching Applicants</h3>
+              <p className="text-gray-500 mb-8 max-w-md mx-auto">Try adjusting your search or filter criteria</p>
+            </div>
+          ) : (
+            <>
+              <table className="w-full [&>*]:animate-fade-in">
+                <thead className="bg-gray-50/50">
+                  <tr>
+                    <th className="py-4 pl-4 text-left text-sm font-semibold text-gray-700">Applicant</th>
+                    <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Position</th>
+                    <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Experience</th>
+                    <th className="py-4 px-4 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="py-4 pr-4 text-right text-sm font-semibold text-gray-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredApplicants.map((applicant, index) => (
+                    <ApplicantRow key={applicant.id} applicant={applicant} onView={setSelectedApplicant} />
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
-        {filteredApplicants.length === 0 && (
-          <div className="text-center py-12">
-            <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500 text-lg">No applicants match your criteria</p>
-          </div>
-        )}
       </div>
 
       {/* Modal */}

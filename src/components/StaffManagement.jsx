@@ -1,7 +1,10 @@
-import { useState } from 'react'
-import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle } from 'lucide-react'
+import LoadingSpinner from './ui/LoadingSpinner'
+import SkeletonCard from './ui/SkeletonCard'
+import FullScreenLoader from './ui/FullScreenLoader'
 
-// Staff Data
+// Staff Data (mock API response)
 const staffData = [
   { id: 1, name: 'Maria Garcia', role: 'Teacher', assignedClass: 'Sunbeam', status: 'active', photo: '👩‍🏫', email: 'maria.garcia@childtrack.com', phone: '(555) 234-5678', hireDate: '2022-01-15', salary: '$4,500/month', payrollStatus: 'Current', performance: 'Excellent', notes: 'Lead teacher for Sunbeam class. Excellent with children.', documents: ['Contract', 'Background Check', 'Certification'] },
   { id: 2, name: 'John Smith', role: 'Teacher', assignedClass: 'Rainbow', status: 'active', photo: '👨‍🏫', email: 'john.smith@childtrack.com', phone: '(555) 345-6789', hireDate: '2021-08-20', salary: '$4,200/month', payrollStatus: 'Current', performance: 'Good', notes: 'Experienced teacher, great curriculum planning.', documents: ['Contract', 'Background Check'] },
@@ -225,6 +228,36 @@ function StaffDrawer({ staff, onClose }) {
 
 // Staff Management Screen
 export default function StaffScreen() {
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [staffList, setStaffList] = useState([])
+
+  // Live Supabase query
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+    
+    const fetchStaff = async () => {
+      try {
+        const { data, error, count } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'STAFF')
+          .order('full_name')
+
+        if (error) throw error
+        
+        setStaffList(data || [])
+      } catch (err) {
+        setError('Failed to load staff data. Please check your connection.')
+        console.error('Staff fetch error:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchStaff()
+  }, [])
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -235,7 +268,7 @@ export default function StaffScreen() {
   const statuses = ['all', 'active', 'on_leave']
   const classes = ['all', 'Sunbeam', 'Rainbow', 'Starlight', 'Butterfly', 'Office']
 
-  const filteredStaff = staffData.filter(staff => {
+  const filteredStaff = staffList.filter(staff => {
     const matchesSearch = staff.name.toLowerCase().includes(searchQuery.toLowerCase()) || staff.role.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesRole = roleFilter === 'all' || staff.role === roleFilter
     const matchesStatus = statusFilter === 'all' || staff.status === statusFilter
@@ -309,28 +342,65 @@ export default function StaffScreen() {
         </div>
 
         {/* Add Staff Button */}
-        <button className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap">
-          <UserPlus size={18} />
-          Add Staff
+        <button 
+          className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <>
+              <LoadingSpinner />
+              Loading...
+            </>
+          ) : (
+            <>
+              <UserPlus size={18} />
+              Add Staff
+            </>
+          )}
         </button>
       </div>
 
-      {/* Staff Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {filteredStaff.map((staff, index) => (
-          <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
-            <StaffCard 
-              staff={staff} 
-              onClick={() => setSelectedStaff(staff)}
-              isActive={staff.status === 'active'}
-            />
+      {isLoading ? (
+        <>
+          <FullScreenLoader message="Fetching staff directory..." />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 opacity-0">
+            <SkeletonCard count={4} />
           </div>
-        ))}
-      </div>
-
-      {filteredStaff.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No staff members found matching your criteria</p>
+        </>
+      ) : error ? (
+        <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
+          <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">Unable to Load Staff</h3>
+          <p className="text-gray-600 mb-8 text-lg">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
+          >
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Retry Loading Staff
+          </button>
+        </div>
+      ) : filteredStaff.length === 0 ? (
+        <div className="text-center py-20 animate-fade-in">
+          <Users className="w-24 h-24 text-gray-300 mx-auto mb-6" />
+          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">No Staff Members Found</h3>
+          <p className="text-gray-600 mb-8 max-w-md mx-auto">Try adjusting your search filters or add new staff members.</p>
+          <button className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
+            <UserPlus className="w-5 h-5" />
+            Add First Staff Member
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
+          {filteredStaff.map((staff, index) => (
+            <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
+              <StaffCard 
+                staff={staff} 
+                onClick={() => setSelectedStaff(staff)}
+                isActive={staff.status === 'active'}
+              />
+            </div>
+          ))}
         </div>
       )}
 

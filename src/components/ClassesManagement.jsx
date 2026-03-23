@@ -1,7 +1,10 @@
-import { useState } from 'react'
-import { Plus, X, Users, Clock, Calendar, TrendingUp, Baby, UserCheck, BookOpen, Award } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, X, Users, Clock, Calendar, TrendingUp, Baby, UserCheck, BookOpen, Award, Loader2, AlertCircle } from 'lucide-react'
+import LoadingSpinner from './ui/LoadingSpinner'
+import SkeletonCard from './ui/SkeletonCard'
+import FullScreenLoader from './ui/FullScreenLoader'
 
-// Classes Data
+// Classes Data (mock API response)
 const classesData = [
   { id: 1, name: 'Sunbeam', ageGroup: '3-4 years', teacher: 'Maria Garcia', children: 12, capacity: 15, year: '2024-2025', color: 'blue' },
   { id: 2, name: 'Rainbow', ageGroup: '4-5 years', teacher: 'John Smith', children: 14, capacity: 15, year: '2024-2025', color: 'purple' },
@@ -358,6 +361,34 @@ function ClassDrawer({ classData, onClose }) {
 export default function ClassesScreen() {
   const [selectedClass, setSelectedClass] = useState(null)
   const [academicYear, setAcademicYear] = useState('2024-2025')
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [classesList, setClassesList] = useState([])
+
+  // Live Supabase query - assume 'classes' table
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+    
+    const fetchClasses = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('classes')
+          .select('*, teacher:profiles(full_name), children_count:children(count)')
+
+        if (error) throw error
+        
+        setClassesList(data || [])
+      } catch (err) {
+        setError('Failed to load classes. Please try again.')
+        console.error('Classes fetch error:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchClasses()
+  }, [])
 
   const years = ['2024-2025', '2023-2024', '2022-2023']
 
@@ -382,27 +413,61 @@ export default function ClassesScreen() {
         </div>
 
         {/* Add Class Button */}
-        <button className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap">
-          <Plus size={18} />
-          Add Class
+        <button 
+          className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <>
+              <LoadingSpinner />
+              Loading...
+            </>
+          ) : (
+            <>
+              <Plus size={18} />
+              Add Class
+            </>
+          )}
         </button>
       </div>
 
-      {/* Classes Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {classesData.filter(c => c.year === academicYear).map((classData, index) => (
-          <div key={classData.id} style={{ animationDelay: `${index * 50}ms` }}>
-            <ClassCard 
-              classData={classData} 
-              onClick={() => setSelectedClass(classData)}
-            />
+      {isLoading ? (
+        <>
+          <FullScreenLoader message="Loading classes..." />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 opacity-0">
+            <SkeletonCard count={4} />
           </div>
-        ))}
-      </div>
-
-      {classesData.filter(c => c.year === academicYear).length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No classes found for {academicYear}</p>
+        </>
+      ) : error ? (
+        <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
+          <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">Unable to Load Classes</h3>
+          <p className="text-gray-600 mb-8">{error}</p>
+          <button onClick={() => window.location.reload()} className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Retry
+          </button>
+        </div>
+      ) : classesList.filter(c => c.year === academicYear).length === 0 ? (
+        <div className="text-center py-20 animate-fade-in">
+          <BookOpen className="w-24 h-24 text-gray-300 mx-auto mb-6" />
+          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">No Classes Found</h3>
+          <p className="text-gray-600 mb-8 max-w-md mx-auto">No classes for {academicYear}. Create your first class to get started!</p>
+          <button className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
+            <Plus className="w-5 h-5" />
+            Add First Class
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
+          {classesList.filter(c => c.year === academicYear).map((classData, index) => (
+            <div key={classData.id} style={{ animationDelay: `${index * 50}ms` }}>
+              <ClassCard 
+                classData={classData} 
+                onClick={() => setSelectedClass(classData)}
+              />
+            </div>
+          ))}
         </div>
       )}
 

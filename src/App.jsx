@@ -30,38 +30,12 @@ import {
   Wifi
 } from 'lucide-react'
 
-import StaffScreen from './components/StaffManagement'
-import ClassesScreen from './components/ClassesManagement'
-import FinanceScreen from './components/FinanceManagement'
-import RecruitmentScreen from './components/Recruitment'
-import SettingsScreen from './components/Settings'
+// Import shared dashboard components
+import { AnimatedCounter, StatCard } from './components/ui/DashboardComponents'
 
+// Legacy imports moved to dashboard components
+// StaffScreen, ClassesScreen, etc. are now handled in AdminDashboard via Sidebar
 
-// Animated Counter Component
-function AnimatedCounter({ end, duration = 2000 }) {
-  const [count, setCount] = useState(0)
-  
-  useEffect(() => {
-    let startTime
-    let animationFrame
-    
-    const animate = (timestamp) => {
-      if (!startTime) startTime = timestamp
-      const progress = Math.min((timestamp - startTime) / duration, 1)
-      setCount(Math.floor(progress * end))
-      
-      if (progress < 1) {
-        animationFrame = requestAnimationFrame(animate)
-      }
-    }
-    
-    animationFrame = requestAnimationFrame(animate)
-    
-    return () => cancelAnimationFrame(animationFrame)
-  }, [end, duration])
-  
-  return <span>{count}</span>
-}
 
 // Sidebar Component
 function Sidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
@@ -294,39 +268,7 @@ function TopBar({ setIsOpen, activeItem }) {
   )
 }
 
-// StatCard Component
-function StatCard({ icon: Icon, label, value, trend, trendUp, color, delay }) {
-  const colorClasses = {
-    blue: 'from-primary-blue to-blue-400',
-    coral: 'from-primary-coral to-orange-400',
-    green: 'from-accent-green to-emerald-400',
-    purple: 'from-accent-purple to-violet-400',
-    yellow: 'from-accent-yellow to-amber-400',
-    pink: 'from-accent-pink to-rose-400',
-  }
-
-  return (
-    <div className={`glass-card rounded-card p-5 card-hover animate-slide-up stagger-${delay}`}>
-      <div className="flex items-start justify-between">
-        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${colorClasses[color]} flex items-center justify-center shadow-lg`}>
-          <Icon size={24} className="text-white" strokeWidth={2} />
-        </div>
-        {trend && (
-          <div className={`flex items-center gap-1 text-xs ${trendUp ? 'text-accent-green' : 'text-red-500'}`}>
-            <TrendingUp size={14} className={!trendUp && 'rotate-180'} />
-            <span className="font-medium">{trend}</span>
-          </div>
-        )}
-      </div>
-      <div className="mt-4">
-        <p className="font-heading font-bold text-3xl text-gray-800">
-          <AnimatedCounter end={parseInt(value)} />
-        </p>
-        <p className="text-sm text-gray-500 mt-1">{label}</p>
-      </div>
-    </div>
-  )
-}
+// StatCard Component - Now imported from ./components/ui/DashboardComponents
 
 // Attendance Bar Chart Component
 function AttendanceChart() {
@@ -707,10 +649,10 @@ function ChildrenScreen() {
         </div>
 
         {/* Add Child Button */}
-        <button className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap">
+        {false && <button className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap">
           <UserPlus size={18} />
           Add Child
-        </button>
+        </button>}
       </div>
 
       {/* Children Grid */}
@@ -1009,36 +951,36 @@ function Dashboard() {
         <StatCard 
           icon={Baby} 
           label="Total Children" 
-          value="248" 
-          trend="+12%" 
-          trendUp={true} 
+          value={data?.childrenCount || 0} 
+          trend={data?.childrenTrend || '0%'} 
+          trendUp={data?.childrenTrendUp || false} 
           color="blue"
           delay={1}
         />
         <StatCard 
           icon={Users} 
           label="Staff Members" 
-          value="32" 
-          trend="+3%" 
-          trendUp={true} 
+          value={data?.staffCount || 0} 
+          trend={data?.staffTrend || '0%'} 
+          trendUp={data?.staffTrendUp || false} 
           color="purple"
           delay={2}
         />
         <StatCard 
           icon={UserCheck} 
           label="Today Attendance" 
-          value="218" 
-          trend="88%" 
-          trendUp={true} 
+          value={data?.attendanceToday || 0} 
+          trend={data?.attendanceTrend || '0%'} 
+          trendUp={data?.attendanceTrendUp || false} 
           color="green"
           delay={3}
         />
         <StatCard 
           icon={DollarSign} 
           label="Pending Payments" 
-          value="12" 
-          trend="$4,250" 
-          trendUp={false} 
+          value={data?.pendingPayments || 0} 
+          trend={data?.paymentsTrend || '$0'} 
+          trendUp={data?.paymentsTrendUp || false} 
           color="coral"
           delay={4}
         />
@@ -1194,35 +1136,20 @@ function RecruitmentCard() {
 }
 
 // Main App Component
+
+import { BrowserRouter as Router } from 'react-router-dom'
+import FullScreenLoader from './components/ui/FullScreenLoader'
+import FlowManager from './components/FlowManager'
+
+function AppContent() {
+  return <FlowManager />
+}
+
 function App() {
-  const [activeItem, setActiveItem] = useState('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-
   return (
-    <div className="min-h-screen">
-      <Sidebar 
-        activeItem={activeItem} 
-        setActiveItem={setActiveItem} 
-        isOpen={sidebarOpen} 
-        setIsOpen={setSidebarOpen} 
-      />
-      
-      <div className="lg:ml-[260px]">
-        <TopBar setIsOpen={setSidebarOpen} activeItem={activeItem} />
-        
-        <main className="p-6">
-          {activeItem === 'dashboard' && <Dashboard />}
-          {activeItem === 'children' && <ChildrenScreen />}
-          {activeItem === 'transport' && <TransportScreen />}
-          {activeItem === 'staff' && <StaffScreen />}
-          {activeItem === 'classes' && <ClassesScreen />}
-          {activeItem === 'finance' && <FinanceScreen />}
-          {activeItem === 'recruitment' && <RecruitmentScreen />}
-          {activeItem === 'settings' && <SettingsScreen />}
-
-        </main>
-      </div>
-    </div>
+    <Router>
+      <AppContent />
+    </Router>
   )
 }
 
