@@ -6,6 +6,7 @@ import StaffManagement from './StaffManagement'
 import ClassesManagement from './ClassesManagement'
 import FinanceManagement from './FinanceManagement'
 import Recruitment from './Recruitment'
+import ChildrenManagement from './ChildrenManagement'
 import SettingsPage from './Settings'
 import ProfilePage from './ProfilePage'
 import { 
@@ -205,10 +206,7 @@ export default function AdminLayout() {
       case 'dashboard':
         return <Dashboard />
       case 'children':
-        return <div className="glass-card rounded-3xl p-12 text-center">
-          <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">Children Management</h3>
-          <p className="text-gray-600">Coming soon...</p>
-        </div>
+        return <ChildrenManagement />
       case 'staff':
         return <StaffManagement />
       case 'classes':

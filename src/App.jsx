@@ -383,66 +383,8 @@ function RecentActivityCard() {
   )
 }
 
-// Children Data
-const childrenData = [
-  { id: 1, name: 'Emma Johnson', age: 4, class: 'Sunbeam', attendance: 95, status: 'present', photo: '👧', health: 'Excellent', allergies: ['Peanuts'], parents: [{ name: 'John Johnson', phone: '(555) 123-4567', email: 'john@email.com', relation: 'Father' }, { name: 'Sarah Johnson', phone: '(555) 123-4568', email: 'sarah@email.com', relation: 'Mother' }], transport: { route: 'Route A', stop: 'Oak Street', pickup: '8:15 AM', dropoff: '4:30 PM' } },
-  { id: 2, name: 'Liam Smith', age: 5, class: 'Rainbow', attendance: 88, status: 'present', photo: '👦', health: 'Good', allergies: [], parents: [{ name: 'Mike Smith', phone: '(555) 234-5678', email: 'mike@email.com', relation: 'Father' }], transport: { route: 'Route B', stop: 'Maple Ave', pickup: '8:00 AM', dropoff: '5:00 PM' } },
-  { id: 3, name: 'Olivia Brown', age: 3, class: 'Starlight', attendance: 92, status: 'absent', photo: '👧', health: 'Good', allergies: ['Milk', 'Eggs'], parents: [{ name: 'David Brown', phone: '(555) 345-6789', email: 'david@email.com', relation: 'Father' }, { name: 'Lisa Brown', phone: '(555) 345-6790', email: 'lisa@email.com', relation: 'Mother' }], transport: null },
-  { id: 4, name: 'Noah Wilson', age: 4, class: 'Sunbeam', attendance: 97, status: 'present', photo: '👦', health: 'Excellent', allergies: [], parents: [{ name: 'Robert Wilson', phone: '(555) 456-7890', email: 'robert@email.com', relation: 'Father' }], transport: { route: 'Route A', stop: 'Pine Street', pickup: '8:20 AM', dropoff: '4:45 PM' } },
-  { id: 5, name: 'Ava Martinez', age: 5, class: 'Rainbow', attendance: 85, status: 'present', photo: '👧', health: 'Good', allergies: ['Shellfish'], parents: [{ name: 'Carlos Martinez', phone: '(555) 567-8901', email: 'carlos@email.com', relation: 'Father' }, { name: 'Maria Martinez', phone: '(555) 567-8902', email: 'maria@email.com', relation: 'Mother' }], transport: { route: 'Route C', stop: 'Elm Street', pickup: '7:45 AM', dropoff: '5:15 PM' } },
-  { id: 6, name: 'Ethan Davis', age: 4, class: 'Starlight', attendance: 90, status: 'present', photo: '👦', health: 'Excellent', allergies: [], parents: [{ name: 'James Davis', phone: '(555) 678-9012', email: 'james@email.com', relation: 'Father' }], transport: null },
-  { id: 7, name: 'Sophia Garcia', age: 3, class: 'Butterfly', attendance: 82, status: 'absent', photo: '👧', health: 'Fair', allergies: ['Soy'], parents: [{ name: 'Antonio Garcia', phone: '(555) 789-0123', email: 'antonio@email.com', relation: 'Father' }, { name: 'Rosa Garcia', phone: '(555) 789-0124', email: 'rosa@email.com', relation: 'Mother' }], transport: { route: 'Route B', stop: 'Cedar Lane', pickup: '8:30 AM', dropoff: '4:00 PM' } },
-  { id: 8, name: 'Mason Taylor', age: 5, class: 'Rainbow', attendance: 94, status: 'present', photo: '👦', health: 'Excellent', allergies: [], parents: [{ name: 'Steven Taylor', phone: '(555) 890-1234', email: 'steven@email.com', relation: 'Father' }], transport: { route: 'Route A', stop: 'Birch Road', pickup: '8:10 AM', dropoff: '4:20 PM' } },
-]
+// Children mock data removed - using real Supabase data from ChildrenManagement.jsx
 
-// Child Profile Card Component
-function ChildCard({ child, onClick }) {
-  const statusColors = {
-    present: 'bg-accent-green/10 text-accent-green',
-    absent: 'bg-red-100 text-red-600',
-    late: 'bg-accent-yellow/10 text-amber-600',
-  }
-
-  return (
-    <div 
-      onClick={onClick}
-      className="glass-card rounded-card p-5 card-hover cursor-pointer animate-slide-up"
-    >
-      <div className="flex flex-col items-center">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral p-[3px] mb-4">
-          <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-            <span className="text-4xl">{child.photo}</span>
-          </div>
-        </div>
-        
-        <h3 className="font-heading font-bold text-lg text-gray-800">{child.name}</h3>
-        <p className="text-sm text-gray-500">{child.age} years old</p>
-        
-        <div className="mt-3 px-3 py-1 bg-gray-100 rounded-full">
-          <span className="text-sm font-medium text-gray-600">{child.class}</span>
-        </div>
-        
-        <div className="mt-3 w-full flex items-center justify-between">
-          <span className="text-xs text-gray-500">Attendance</span>
-          <span className={`text-sm font-bold ${child.attendance >= 90 ? 'text-accent-green' : child.attendance >= 80 ? 'text-accent-yellow' : 'text-red-500'}`}>
-            {child.attendance}%
-          </span>
-        </div>
-        
-        <div className="w-full bg-gray-100 rounded-full h-2 mt-1">
-          <div 
-            className={`h-2 rounded-full ${child.attendance >= 90 ? 'bg-accent-green' : child.attendance >= 80 ? 'bg-accent-yellow' : 'bg-red-500'}`}
-            style={{ width: `${child.attendance}%` }}
-          />
-        </div>
-        
-        <span className={`mt-3 text-xs px-3 py-1 rounded-full ${statusColors[child.status]}`}>
-          {child.status === 'present' ? '● Present' : child.status === 'absent' ? '○ Absent' : '◐ Late'}
-        </span>
-      </div>
-    </div>
-  )
-}
 
 // Child Detail Drawer Component
 function ChildDrawer({ child, onClose }) {
@@ -581,108 +523,8 @@ function ChildDrawer({ child, onClose }) {
   )
 }
 
-// Children Management Screen
-function ChildrenScreen() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [classFilter, setClassFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [selectedChild, setSelectedChild] = useState(null)
-
-  const classes = ['all', 'Sunbeam', 'Rainbow', 'Starlight', 'Butterfly']
-  const statuses = ['all', 'present', 'absent', 'late']
-
-  const filteredChildren = childrenData.filter(child => {
-    const matchesSearch = child.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesClass = classFilter === 'all' || child.class === classFilter
-    const matchesStatus = statusFilter === 'all' || child.status === statusFilter
-    return matchesSearch && matchesClass && matchesStatus
-  })
-
-  return (
-    <div className="space-y-6">
-      {/* Top Bar */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-        <div className="flex flex-col sm:flex-row gap-3 flex-1">
-          {/* Search */}
-          <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text"
-              placeholder="Search children..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2.5 w-full sm:w-72 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue
-                         text-sm transition-all"
-            />
-          </div>
-
-          {/* Class Filter */}
-          <div className="relative">
-            <select 
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className="pl-4 pr-10 py-2.5 w-full sm:w-44 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
-            >
-              {classes.map(c => (
-                <option key={c} value={c}>{c === 'all' ? 'All Classes' : c}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Status Filter */}
-          <div className="relative">
-            <select 
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="pl-4 pr-10 py-2.5 w-full sm:w-44 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
-            >
-              {statuses.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All Status' : s.charAt(0).toUpperCase() + s.slice(1)}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-
-        {/* Add Child Button */}
-        {false && <button className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap">
-          <UserPlus size={18} />
-          Add Child
-        </button>}
-      </div>
-
-      {/* Children Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {filteredChildren.map((child, index) => (
-          <div key={child.id} style={{ animationDelay: `${index * 50}ms` }}>
-            <ChildCard 
-              child={child} 
-              onClick={() => setSelectedChild(child)}
-            />
-          </div>
-        ))}
-      </div>
-
-      {filteredChildren.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No children found matching your criteria</p>
-        </div>
-      )}
-
-      {/* Child Detail Drawer */}
-      {selectedChild && (
-        <ChildDrawer 
-          child={selectedChild} 
-          onClose={() => setSelectedChild(null)} 
-        />
-      )}
-    </div>
-  )
-}
+// Children Management Screen (REMOVED - now src/components/ChildrenManagement.jsx with real data)
+// function ChildrenScreen() ... (entire prototype removed)
 
 // Transport Monitoring Screen
 function TransportScreen() {

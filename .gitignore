@@ -1,4 +1,7 @@
-
+# Environment variables (sensitive)
+.env
+.env.local
+.env.production
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
