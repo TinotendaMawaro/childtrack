@@ -73,7 +73,7 @@ export default function FlowManager() {
 
   // Only show loader during initial auth check, not during role/profile loading after login
   if (authLoading) {
-    return <FullScreenLoader message="Verifying authentication..." />
+    return <FullScreenLoader message="Verifying authentication..." title="Authenticating" />
   }
 
   if (showTerms && !termsAccepted) {

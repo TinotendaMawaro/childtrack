@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import SkeletonTable from './ui/SkeletonTable'
-import FullScreenLoader from './ui/FullScreenLoader'
 // StatCard is defined inline
 
 
@@ -318,7 +317,10 @@ export default function RecruitmentScreen() {
       </div>
 
       {isLoading ? (
-        <FullScreenLoader />
+        <div className="glass-card rounded-3xl p-12 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading recruitment data...</p>
+        </div>
       ) : error ? (
         <div className="glass-card rounded-3xl p-12 text-center max-w-lg mx-auto">
           <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />

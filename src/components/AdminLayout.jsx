@@ -1,6 +1,7 @@
 // Fixed AdminLayout with proper imports - replace the current AdminLayout.jsx
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { supabase } from '../lib/supabaseClient'
 import Dashboard from './Dashboard'
 import StaffManagement from './StaffManagement'
 import ClassesManagement from './ClassesManagement'
@@ -9,7 +10,7 @@ import Recruitment from './Recruitment'
 import ChildrenManagement from './ChildrenManagement'
 import SettingsPage from './Settings'
 import ProfilePage from './ProfilePage'
-import { 
+import {
   LayoutDashboard,
   Baby,
   Users,
@@ -24,7 +25,8 @@ import {
   ChevronDown,
   Menu,
   TrendingUp,
-  LogOut
+  LogOut,
+  X
 } from 'lucide-react'
 
 // Page titles and descriptions
@@ -156,14 +158,55 @@ export function AdminSidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
 
 // Main AdminLayout Component
 export default function AdminLayout() {
-  const [activeItem, setActiveItem] = useState('dashboard')
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const { signOut, profile, uploadProfilePic, session } = useAuth()
-  
-  const [showDropdown, setShowDropdown] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [fileInputRef, setFileInputRef] = useState(null)
+   // Load activeItem from localStorage on initial load
+   const [activeItem, setActiveItem] = useState(() => {
+     const saved = localStorage.getItem('adminActiveTab')
+     return saved || 'dashboard'
+   })
+   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+   const [searchQuery, setSearchQuery] = useState('')
+   const { signOut, profile, uploadProfilePic, session } = useAuth()
+
+   const [showDropdown, setShowDropdown] = useState(false)
+   const [uploading, setUploading] = useState(false)
+   const [fileInputRef, setFileInputRef] = useState(null)
+
+   // Notifications state
+   const [showNotifications, setShowNotifications] = useState(false)
+   const [notifications, setNotifications] = useState([])
+   const [unreadCount, setUnreadCount] = useState(0)
+
+   // Fetch notifications when dropdown opens
+   useEffect(() => {
+     if (showNotifications && session?.user?.id) {
+       fetchNotifications()
+     }
+   }, [showNotifications, session])
+
+   const fetchNotifications = async () => {
+     const { data } = await supabase
+       .from('notifications')
+       .select('*')
+       .eq('recipient_id', session.user.id)
+       .order('created_at', { ascending: false })
+       .limit(10)
+
+     if (data) {
+       setNotifications(data)
+       setUnreadCount(data.filter(n => !n.is_read).length)
+     }
+   }
+
+   const markAsRead = async (notifId) => {
+     await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', notifId)
+     setNotifications(prev => prev.map(n => n.id === notifId ? {...n, is_read: true} : n))
+     setUnreadCount(prev => Math.max(0, prev - 1))
+   }
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('adminActiveTab', activeItem)
+  }, [activeItem])
   
   const handleLogout = async () => {
     await signOut()
@@ -262,11 +305,64 @@ export default function AdminLayout() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="relative p-3 hover:bg-gray-100 rounded-xl transition-colors">
-              <Bell size={22} className="text-gray-600" />
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-primary-coral rounded-full border-2 border-white"></span>
-            </button>
-            
+            {/* Notifications Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-3 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                <Bell size={22} className="text-gray-600" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-2 right-2 w-5 h-5 bg-primary-coral text-white text-xs rounded-full flex items-center justify-center font-medium">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 glass-card rounded-xl shadow-xl overflow-hidden animate-fade-in z-50">
+                  <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="font-heading font-semibold text-gray-800">Notifications</h3>
+                    <button
+                      onClick={() => setShowNotifications(false)}
+                      className="p-1 hover:bg-gray-100 rounded-lg"
+                    >
+                      <X size={16} className="text-gray-500" />
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500 text-sm">No notifications</div>
+                    ) : (
+                      notifications.map((notif) => (
+                        <div
+                          key={notif.id}
+                          onClick={() => markAsRead(notif.id)}
+                          className={`p-4 border-b border-gray-50 hover:bg-gray-50/80 cursor-pointer transition-colors ${!notif.is_read ? 'bg-blue-50/30' : ''}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-primary-blue/10 flex items-center justify-center flex-shrink-0">
+                              <Bell size={16} className="text-primary-blue" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 line-clamp-2">{notif.title}</p>
+                              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {new Date(notif.created_at).toLocaleDateString()} {new Date(notif.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </p>
+                            </div>
+                            {!notif.is_read && (
+                              <div className="w-2 h-2 rounded-full bg-primary-blue mt-2" />
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
 <div className="text-right hidden sm:block">
                 <p className="font-medium text-gray-800">{profile?.full_name || 'Admin'}</p>

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Users, Clock, Calendar, TrendingUp, Baby, UserCheck, BookOpen, Award, Loader2, AlertCircle } from 'lucide-react'
+import { Plus, X, Users, Clock, Calendar, TrendingUp, Baby, UserCheck, BookOpen, Award, Loader2, AlertCircle, Edit, Trash2 } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
-import SkeletonCard from './ui/SkeletonCard'
-import FullScreenLoader from './ui/FullScreenLoader'
+import { supabase } from '../lib/supabaseClient'
 
 // Classes Data (mock API response)
 const classesData = [
@@ -140,12 +139,36 @@ function ClassDrawer({ classData, onClose }) {
       <div className="fixed top-0 right-0 h-full w-[480px] glass-card rounded-l-large z-50 overflow-y-auto animate-slide-in-right">
         <div className="sticky top-0 bg-white/70 backdrop-blur-glass p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-heading font-bold text-xl text-gray-800">Class Details</h2>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <X size={20} className="text-gray-600" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                openEditModal(classData)
+                onClose()
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue"
+              title="Edit Class"
+            >
+              <Edit size={20} />
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('Delete this class?')) {
+                  handleDeleteClass(classData.id)
+                  onClose()
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600"
+              title="Delete Class"
+            >
+              <Trash2 size={20} />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X size={20} className="text-gray-600" />
+            </button>
+          </div>
         </div>
 
         {/* Profile Header */}
@@ -359,36 +382,273 @@ function ClassDrawer({ classData, onClose }) {
 
 // Classes Management Screen
 export default function ClassesScreen() {
-  const [selectedClass, setSelectedClass] = useState(null)
-  const [academicYear, setAcademicYear] = useState('2024-2025')
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [classesList, setClassesList] = useState([])
+ const [selectedClass, setSelectedClass] = useState(null)
+   const [academicYear, setAcademicYear] = useState('2024-2025')
+   const [isLoading, setIsLoading] = useState(true)
+   const [error, setError] = useState(null)
+   const [classesList, setClassesList] = useState([])
 
-  // Live Supabase query - assume 'classes' table
+   // State for edit functionality
+   const [editingClassId, setEditingClassId] = useState(null)
+   const [isEditing, setIsEditing] = useState(false)
+   const [editError, setEditError] = useState('')
+
+   // Add Class Modal State
+   const [showAddModal, setShowAddModal] = useState(false)
+   const [isAdding, setIsAdding] = useState(false)
+   const [addError, setAddError] = useState('')
+   const [staffList, setStaffList] = useState([])
+
+  // Form state
+  const initialFormState = {
+    name: '',
+    age_group: '',
+    teacher_id: '',
+    capacity: 20
+  }
+  const [newClass, setNewClass] = useState(initialFormState)
+
+  // Live Supabase query
   useEffect(() => {
+    fetchClasses()
+    fetchStaff()
+  }, [])
+
+  const fetchStaff = async () => {
+    try {
+      // Fetch staff and profiles separately to avoid RLS issues
+      const [staffRes, profilesRes] = await Promise.all([
+        supabase.from('staff').select('id, role_title, assigned_class'),
+        supabase.from('profiles').select('id, full_name, email')
+      ])
+
+      if (staffRes.error) throw staffRes.error
+      if (profilesRes.error) throw profilesRes.error
+
+      const profilesMap = (profilesRes.data || []).reduce((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {})
+
+      const staffWithNames = (staffRes.data || []).map(s => ({
+        id: s.id,
+        full_name: profilesMap[s.id]?.full_name || 'Unknown',
+        role: s.role_title || 'Staff'
+      }))
+
+      setStaffList(staffWithNames)
+    } catch (err) {
+      console.error('Failed to fetch staff:', err)
+    }
+  }
+
+  const fetchClasses = async () => {
     setIsLoading(true)
     setError(null)
     
-    const fetchClasses = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('classes')
-          .select('*, teacher:profiles(full_name), children_count:children(count)')
+    try {
+      // Fetch classes with basic data
+      const { data, error } = await supabase
+        .from('classes')
+        .select(`
+          id,
+          name,
+          age_group,
+          teacher_id,
+          capacity,
+          created_at
+        `)
+        .order('name')
 
-        if (error) throw error
-        
-        setClassesList(data || [])
-      } catch (err) {
-        setError('Failed to load classes. Please try again.')
-        console.error('Classes fetch error:', err)
-      } finally {
-        setIsLoading(false)
-      }
+      if (error) throw error
+
+      // Fetch children counts for each class in parallel
+      const classesWithCounts = await Promise.all(
+        (data || []).map(async (cls) => {
+          try {
+            const { count } = await supabase
+              .from('children')
+              .select('*', { count: 'exact', head: true })
+              .eq('class_id', cls.id)
+            return {
+              id: cls.id,
+              name: cls.name,
+              ageGroup: cls.age_group || 'N/A',
+              teacher: 'Not assigned',
+              capacity: cls.capacity || 20,
+              children: count || 0,
+              year: '2024-2025',
+              color: ['blue', 'purple', 'yellow', 'pink'][Math.floor(Math.random() * 4)],
+              teacher_id: cls.teacher_id
+            }
+          } catch (err) {
+            console.error(`Failed to count children for class ${cls.id}:`, err)
+            return {
+              id: cls.id,
+              name: cls.name,
+              ageGroup: cls.age_group || 'N/A',
+              teacher: 'Not assigned',
+              capacity: cls.capacity || 20,
+              children: 0,
+              year: '2024-2025',
+              color: ['blue', 'purple', 'yellow', 'pink'][Math.floor(Math.random() * 4)],
+              teacher_id: cls.teacher_id
+            }
+          }
+        })
+      )
+
+      // Fetch teacher names
+      const classesWithTeachers = await Promise.all(
+        classesWithCounts.map(async (cls) => {
+          try {
+            if (cls.teacher_id) {
+              const { data: teacherData } = await supabase
+                .from('profiles')
+                .select('full_name')
+                .eq('id', cls.teacher_id)
+                .single()
+              if (teacherData) {
+                cls.teacher = teacherData.full_name || 'Unknown'
+              }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch teacher for class ${cls.id}:`, err)
+          }
+          return cls
+        })
+      )
+
+      setClassesList(classesWithTeachers)
+    } catch (err) {
+      setError('Failed to load classes. Please try again.')
+      console.error('Classes fetch error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Handle adding new class
+  const handleAddClass = async (e) => {
+    e.preventDefault()
+    setAddError(null)
+
+    // Validation
+    if (!newClass.name.trim()) {
+      setAddError('Class name is required')
+      return
+    }
+    if (!newClass.age_group) {
+      setAddError('Age group is required')
+      return
     }
 
-    fetchClasses()
-  }, [])
+    setIsAdding(true)
+
+    try {
+      const classData = {
+        name: newClass.name,
+        age_group: newClass.age_group,
+        teacher_id: newClass.teacher_id || null,
+        capacity: newClass.capacity
+      }
+
+      const { error } = await supabase.from('classes').insert(classData)
+      if (error) throw error
+
+      setShowAddModal(false)
+      setNewClass(initialFormState)
+      fetchClasses()
+      alert('Class created successfully!')
+    } catch (err) {
+      console.error('Error adding class:', err)
+      setAddError(err.message || 'Failed to create class.')
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  // Handle editing class
+  const handleEditClass = async (e) => {
+    e.preventDefault()
+    setEditError(null)
+
+    if (!newClass.name.trim()) {
+      setEditError('Class name is required')
+      return
+    }
+    if (!newClass.age_group) {
+      setEditError('Age group is required')
+      return
+    }
+
+    setIsEditing(true)
+
+    try {
+      const updateData = {
+        name: newClass.name,
+        age_group: newClass.age_group,
+        teacher_id: newClass.teacher_id || null,
+        capacity: newClass.capacity
+      }
+
+      const { error } = await supabase
+        .from('classes')
+        .update(updateData)
+        .eq('id', editingClassId)
+
+      if (error) throw error
+
+      setShowEditModal(false)
+      setEditingClassId(null)
+      setNewClass(initialFormState)
+      fetchClasses()
+      alert('Class updated successfully!')
+    } catch (err) {
+      console.error('Error updating class:', err)
+      setEditError(err.message || 'Failed to update class.')
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  // Handle delete class
+  const handleDeleteClass = async (classId) => {
+    if (!confirm('Are you sure you want to delete this class? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase.from('classes').delete().eq('id', classId)
+      if (error) throw error
+
+      fetchClasses()
+      alert('Class deleted successfully!')
+    } catch (err) {
+      console.error('Error deleting class:', err)
+      alert('Error deleting class: ' + (err.message || 'Unknown error'))
+    }
+  }
+
+  // Open edit modal
+  const openEditModal = (classData) => {
+    setEditingClassId(classData.id)
+    setNewClass({
+      name: classData.name,
+      age_group: classData.ageGroup || '',
+      teacher_id: classData.teacher_id || '',
+      capacity: classData.capacity || 20
+    })
+    setShowEditModal(true)
+  }
+
+  const handleInputChange = (e) => {
+    const { name, value, type } = e.target
+    setNewClass(prev => ({
+      ...prev,
+      [name]: type === 'number' ? (value === '' ? '' : parseInt(value, 10)) : value
+    }))
+  }
 
   const years = ['2024-2025', '2023-2024', '2022-2023']
 
@@ -413,7 +673,8 @@ export default function ClassesScreen() {
         </div>
 
         {/* Add Class Button */}
-        <button 
+        <button
+          onClick={() => setShowAddModal(true)}
           className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
           disabled={isLoading}
         >
@@ -431,13 +692,12 @@ export default function ClassesScreen() {
         </button>
       </div>
 
+      {/* Content Area */}
       {isLoading ? (
-        <>
-          <FullScreenLoader message="Loading classes..." />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 opacity-0">
-            <SkeletonCard count={4} />
-          </div>
-        </>
+        <div className="glass-card rounded-3xl p-12 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading classes...</p>
+        </div>
       ) : error ? (
         <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
           <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
@@ -478,6 +738,231 @@ export default function ClassesScreen() {
           onClose={() => setSelectedClass(null)} 
         />
       )}
+
+       {/* Add Class Modal */}
+       {showAddModal && (
+         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+           <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+             <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+               <h3 className="text-2xl font-bold text-gray-800">Add New Class</h3>
+               <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                 <X size={24} className="text-gray-600" />
+               </button>
+             </div>
+
+             <form onSubmit={handleAddClass} className="p-6 space-y-6">
+               {addError && (
+                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                   {addError}
+                 </div>
+               )}
+
+               {/* Basic Info */}
+               <div className="space-y-4">
+                 <h4 className="font-heading font-semibold text-gray-800">Class Details</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Class Name *</label>
+                     <input
+                       type="text"
+                       name="name"
+                       required
+                       value={newClass.name}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="e.g., Sunbeam"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Age Group *</label>
+                     <input
+                       type="text"
+                       name="age_group"
+                       required
+                       value={newClass.age_group}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="e.g., 3-4 years"
+                     />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
+                     <input
+                       type="number"
+                       name="capacity"
+                       min="1"
+                       max="50"
+                       value={newClass.capacity}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                     />
+                   </div>
+                   <div className="flex items-end">
+                     <p className="text-xs text-gray-500 pb-3">
+                       Curriculum can be set after configuration.
+                     </p>
+                   </div>
+                 </div>
+
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Teacher (Optional)</label>
+                   <select
+                     name="teacher_id"
+                     value={newClass.teacher_id}
+                     onChange={handleInputChange}
+                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                   >
+                     <option value="">Select a teacher</option>
+                     {staffList.map(staff => (
+                       <option key={staff.id} value={staff.id}>
+                         {staff.full_name} ({staff.role})
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+               </div>
+
+               {/* Actions */}
+               <div className="flex gap-4 pt-4 border-t border-gray-200">
+                 <button
+                   type="button"
+                   onClick={() => setShowAddModal(false)}
+                   className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   type="submit"
+                   disabled={isAdding}
+                   className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                 >
+                   {isAdding ? (
+                     <>
+                       <Loader2 className="w-5 h-5 animate-spin" />
+                       Creating...
+                     </>
+                   ) : (
+                     'Create Class'
+                   )}
+                 </button>
+               </div>
+             </form>
+           </div>
+         </div>
+       )}
+
+       {/* Edit Class Modal */}
+       {showEditModal && (
+         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
+           <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+             <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+               <h3 className="text-2xl font-bold text-gray-800">Edit Class</h3>
+               <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                 <X size={24} className="text-gray-600" />
+               </button>
+             </div>
+
+             <form onSubmit={handleEditClass} className="p-6 space-y-6">
+               {editError && (
+                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                   {editError}
+                 </div>
+               )}
+
+               {/* Basic Info */}
+               <div className="space-y-4">
+                 <h4 className="font-heading font-semibold text-gray-800">Class Details</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Class Name *</label>
+                     <input
+                       type="text"
+                       name="name"
+                       required
+                       value={newClass.name}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="e.g., Sunbeam"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Age Group *</label>
+                     <input
+                       type="text"
+                       name="age_group"
+                       required
+                       value={newClass.age_group}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="e.g., 3-4 years"
+                     />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
+                     <input
+                       type="number"
+                       name="capacity"
+                       min="1"
+                       max="50"
+                       value={newClass.capacity}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                     />
+                   </div>
+                 </div>
+
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Teacher (Optional)</label>
+                   <select
+                     name="teacher_id"
+                     value={newClass.teacher_id}
+                     onChange={handleInputChange}
+                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                   >
+                     <option value="">Select a teacher</option>
+                     {staffList.map(staff => (
+                       <option key={staff.id} value={staff.id}>
+                         {staff.full_name} ({staff.role})
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+               </div>
+
+               {/* Actions */}
+               <div className="flex gap-4 pt-4 border-t border-gray-200">
+                 <button
+                   type="button"
+                   onClick={() => setShowEditModal(false)}
+                   className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   type="submit"
+                   disabled={isEditing}
+                   className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                 >
+                   {isEditing ? (
+                     <>
+                       <Loader2 className="w-5 h-5 animate-spin" />
+                       Updating...
+                     </>
+                   ) : (
+                     'Update Class'
+                   )}
+                 </button>
+               </div>
+             </form>
+           </div>
+         </div>
+       )}
     </div>
   )
 }
