@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle, User } from 'lucide-react'
+import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle, Edit, Trash2 } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
-import SkeletonCard from './ui/SkeletonCard'
-import FullScreenLoader from './ui/FullScreenLoader'
 import { supabase } from '../lib/supabaseClient'
 
 // Staff Data (mock - kept for fallback)
@@ -97,12 +95,36 @@ function StaffDrawer({ staff, onClose }) {
       <div className="fixed top-0 right-0 h-full w-[420px] glass-card rounded-l-large z-50 overflow-y-auto animate-slide-in-right">
         <div className="sticky top-0 bg-white/70 backdrop-blur-glass p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-heading font-bold text-xl text-gray-800">Staff Details</h2>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <X size={20} className="text-gray-600" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                openEditModal(staff)
+                onClose()
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue"
+              title="Edit Staff"
+            >
+              <Edit size={20} />
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('Delete this staff member?')) {
+                  handleDeleteStaff(staff.id)
+                  onClose()
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600"
+              title="Delete Staff"
+            >
+              <Trash2 size={20} />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X size={20} className="text-gray-600" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-6">
@@ -229,15 +251,21 @@ function StaffDrawer({ staff, onClose }) {
 
 // Staff Management Screen
 export default function StaffScreen() {
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [staffList, setStaffList] = useState([])
-  
-  // Add Staff Modal State
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [isAdding, setIsAdding] = useState(false)
-  const [addError, setAddError] = useState('')
-  const [classOptions, setClassOptions] = useState([])
+   const [isLoading, setIsLoading] = useState(true)
+   const [error, setError] = useState(null)
+   const [staffList, setStaffList] = useState([])
+
+   // Edit state
+   const [editingStaff, setEditingStaff] = useState(null)
+   const [isEditing, setIsEditing] = useState(false)
+   const [editError, setEditError] = useState('')
+   const [showEditModal, setShowEditModal] = useState(false)
+
+   // Add Staff Modal State
+   const [showAddModal, setShowAddModal] = useState(false)
+   const [isAdding, setIsAdding] = useState(false)
+   const [addError, setAddError] = useState('')
+   const [classOptions, setClassOptions] = useState([])
   
   // Form state
   const initialFormState = {
@@ -251,72 +279,158 @@ export default function StaffScreen() {
   }
   const [newStaff, setNewStaff] = useState(initialFormState)
 
-  // Named fetch function to be reused
-  const fetchStaff = async () => {
-    setIsLoading(true)
-    setError(null)
-    
-    try {
-      // Fetch all data in parallel (avoiding join RLS issues)
-      const [staffRes, profilesRes, classesRes] = await Promise.all([
-        supabase.from('staff').select('id, role_title, assigned_class, status, created_at'),
-        supabase.from('profiles').select('id, full_name, email, phone'), // Only core columns
-        supabase.from('classes').select('id, name')
-      ])
+   // Named fetch function to be reused
+   const fetchStaff = async () => {
+     setIsLoading(true)
+     setError(null)
 
-      // Check for errors
-      if (staffRes.error) throw staffRes.error
-      if (profilesRes.error) throw profilesRes.error
-      if (classesRes.error) throw classesRes.error
+     try {
+       const [staffRes, profilesRes, classesRes] = await Promise.all([
+         supabase.from('staff').select('id, role_title, assigned_class, status, created_at'),
+         supabase.from('profiles').select('id, full_name, email, phone'),
+         supabase.from('classes').select('id, name')
+       ])
 
-      // Build lookup maps
-      const profilesMap = (profilesRes.data || []).reduce((acc, p) => {
-        acc[p.id] = p
-        return acc
-      }, {})
+       if (staffRes.error) throw staffRes.error
+       if (profilesRes.error) throw profilesRes.error
+       if (classesRes.error) throw classesRes.error
 
-      const classesMap = (classesRes.data || []).reduce((acc, c) => {
-        acc[c.id] = c.name
-        return acc
-      }, {})
+       const profilesMap = (profilesRes.data || []).reduce((acc, p) => {
+         acc[p.id] = p
+         return acc
+       }, {})
 
-      // Also set class options for dropdown (used in Add Modal)
-      setClassOptions(classesRes.data || [])
+       const classesMap = (classesRes.data || []).reduce((acc, c) => {
+         acc[c.id] = c.name
+         return acc
+       }, {})
 
-      // Transform data by joining in memory
-      const transformedData = (staffRes.data || []).map(staff => {
-        const profile = profilesMap[staff.id] || {}
-        const assignedClassName = staff.assigned_class ? (classesMap[staff.assigned_class] || 'Unknown Class') : 'Unassigned'
-        
-        return {
-          id: staff.id,
-          name: profile.full_name || 'Unknown',
-          role: staff.role_title || 'Staff',
-          assignedClass: assignedClassName,
-          status: staff.status?.toLowerCase() || 'active',
-          photo: profile.avatar_url ? '👤' : '👨‍🏫',
-          email: profile.email || '',
-          phone: profile.phone || '',
-          hireDate: staff.created_at ? new Date(staff.created_at).toLocaleDateString() : '',
-          salary: '$3,500/month',
-          payrollStatus: 'Current',
-          performance: 'Good',
-          notes: profile.bio || 'No additional notes.',
-          documents: ['Contract', 'Background Check'],
-          fullProfile: profile,
-          classDetails: null
-        }
-      })
+       setClassOptions(classesRes.data || [])
 
-      setStaffList(transformedData)
-    } catch (err) {
-      const errorMessage = err?.message || err?.toString() || 'Unknown error'
-      setError(`Failed to load staff data: ${errorMessage}`)
-      console.error('Staff fetch error:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+       const transformedData = (staffRes.data || []).map(staff => {
+         const profile = profilesMap[staff.id] || {}
+         const assignedClassName = staff.assigned_class ? (classesMap[staff.assigned_class] || 'Unknown Class') : 'Unassigned'
+
+         return {
+           id: staff.id,
+           name: profile.full_name || 'Unknown',
+           role: staff.role_title || 'Staff',
+           assignedClass: assignedClassName,
+           assignedClassId: staff.assigned_class,
+           status: staff.status?.toLowerCase() || 'active',
+           photo: profile.avatar_url ? '👤' : '👨‍🏫',
+           email: profile.email || '',
+           phone: profile.phone || '',
+           hireDate: staff.created_at ? new Date(staff.created_at).toLocaleDateString() : '',
+           salary: '$3,500/month',
+           payrollStatus: 'Current',
+           performance: 'Good',
+           notes: profile.bio || 'No additional notes.',
+           documents: ['Contract', 'Background Check'],
+           fullProfile: profile
+         }
+       })
+
+       setStaffList(transformedData)
+     } catch (err) {
+       const errorMessage = err?.message || err?.toString() || 'Unknown error'
+       setError(`Failed to load staff data: ${errorMessage}`)
+       console.error('Staff fetch error:', err)
+     } finally {
+       setIsLoading(false)
+     }
+   }
+
+   // Open edit modal
+   const openEditModal = (staff) => {
+     setEditingStaff(staff)
+     setNewStaff({
+       full_name: staff.name,
+       email: staff.email,
+       role_title: staff.role,
+       assigned_class: staff.assignedClassId || '',
+       phone: staff.phone || ''
+     })
+     setShowEditModal(true)
+   }
+
+   // Handle update staff (simplified - only updates profile and staff record)
+   const handleUpdateStaff = async (e) => {
+     e.preventDefault()
+     setEditError(null)
+     setIsEditing(true)
+
+     try {
+       // Get admin session
+       const { data: { session: adminSession } } = await supabase.auth.getSession()
+       if (!adminSession) {
+         throw new Error('No active admin session.')
+       }
+
+       const adminAccessToken = adminSession.access_token
+       const adminRefreshToken = adminSession.refresh_token
+
+       // Update profile
+       const { error: profileError } = await supabase
+         .from('profiles')
+         .update({
+           full_name: newStaff.full_name,
+           email: newStaff.email,
+           phone: newStaff.phone || null
+         })
+         .eq('id', editingStaff.id)
+
+       if (profileError) throw profileError
+
+       // Update staff record
+       const { error: staffError } = await supabase
+         .from('staff')
+         .update({
+           role_title: newStaff.role_title,
+           assigned_class: newStaff.assigned_class || null
+         })
+         .eq('id', editingStaff.id)
+
+       if (staffError) throw staffError
+
+       setShowEditModal(false)
+       setEditingStaff(null)
+       setNewStaff(initialFormState)
+       await fetchStaff()
+       alert('Staff member updated successfully!')
+     } catch (err) {
+       console.error('Update staff error:', err)
+       setEditError(err.message || 'Failed to update staff')
+     } finally {
+       setIsEditing(false)
+     }
+   }
+
+   // Handle delete staff
+   const handleDeleteStaff = async (staffId) => {
+     if (!confirm('Are you sure you want to delete this staff member? This will also remove their profile and access.')) {
+       return
+     }
+
+     try {
+       // Get admin session
+       const { data: { session: adminSession } } = await supabase.auth.getSession()
+       if (!adminSession) {
+         throw new Error('No active admin session.')
+       }
+
+       // Delete staff record (cascades to profiles via FK ON DELETE CASCADE if set)
+       // But safer to delete from staff first, then profiles if needed
+       const { error: staffError } = await supabase.from('staff').delete().eq('id', staffId)
+       if (staffError) throw staffError
+
+       fetchStaff()
+       alert('Staff member deleted successfully!')
+     } catch (err) {
+       console.error('Delete staff error:', err)
+       alert('Error: ' + (err.message || 'Unknown error'))
+     }
+   }
 
   // Live Supabase query
   useEffect(() => {
@@ -477,161 +591,312 @@ const handleInputChange = (e) => {
   setNewStaff(prev => ({ ...prev, [name]: value }))
 }
 
-return (
-    <div className="space-y-6">
-      {/* Top Bar */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-        <div className="flex flex-col sm:flex-row gap-3 flex-1">
-          {/* Search */}
-          <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text"
-              placeholder="Search staff..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2.5 w-full sm:w-72 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue
-                         text-sm transition-all"
-            />
-          </div>
-
-          {/* Role Filter */}
-          <div className="relative">
-            <select 
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
-            >
-              {roles.map(r => (
-                <option key={r} value={r}>{r === 'all' ? 'All Roles' : r}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Status Filter */}
-          <div className="relative">
-            <select 
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
-            >
-              {statuses.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All Status' : s === 'active' ? 'Active' : 'On Leave'}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Class Filter */}
-          <div className="relative">
-            <select 
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className="pl-4 pr-10 py-2.5 w-full sm:w-44 rounded-xl bg-white/70 border border-gray-200 
-                         focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
-            >
-              {classes.map(c => (
-                <option key={c} value={c}>{c === 'all' ? 'All Classes' : c}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-
-        {/* Add Staff Button */}
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <LoadingSpinner />
-              Loading...
-            </>
-          ) : (
-            <>
-              <UserPlus size={18} />
-              Add Staff
-            </>
-          )}
-        </button>
-      </div>
-
-      {isLoading ? (
-        <>
-          <FullScreenLoader message="Fetching staff directory..." />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 opacity-0">
-            <SkeletonCard count={4} />
-          </div>
-        </>
-      ) : error ? (
-        <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
-          <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
-          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">Unable to Load Staff</h3>
-          <p className="text-gray-600 mb-8 text-lg">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
-          >
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Retry Loading Staff
-          </button>
-        </div>
-      ) : filteredStaff.length === 0 ? (
-        <div className="text-center py-20 animate-fade-in">
-          <Users className="w-24 h-24 text-gray-300 mx-auto mb-6" />
-          <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">No Staff Members Found</h3>
-          <p className="text-gray-600 mb-8 max-w-md mx-auto">Try adjusting your search filters or add new staff members.</p>
-           <button 
-             onClick={() => setShowAddModal(true)}
-             className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
-           >
-             <UserPlus className="w-5 h-5" />
-             Add First Staff Member
-           </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
-          {filteredStaff.map((staff, index) => (
-            <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
-              <StaffCard 
-                staff={staff} 
-                onClick={() => setSelectedStaff(staff)}
-                isActive={staff.status === 'active'}
+  return (
+    <>
+      <div className="space-y-6">
+        {/* Top Bar */}
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+          <div className="flex flex-col sm:flex-row gap-3 flex-1">
+            {/* Search */}
+            <div className="relative">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input 
+                type="text"
+                placeholder="Search staff..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2.5 w-full sm:w-72 rounded-xl bg-white/70 border border-gray-200 
+                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue
+                           text-sm transition-all"
               />
             </div>
-          ))}
+
+            {/* Role Filter */}
+            <div className="relative">
+              <select 
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
+                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+              >
+                {roles.map(r => (
+                  <option key={r} value={r}>{r === 'all' ? 'All Roles' : r}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Status Filter */}
+            <div className="relative">
+              <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
+                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+              >
+                {statuses.map(s => (
+                  <option key={s} value={s}>{s === 'all' ? 'All Status' : s === 'active' ? 'Active' : 'On Leave'}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Class Filter */}
+            <div className="relative">
+              <select 
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="pl-4 pr-10 py-2.5 w-full sm:w-44 rounded-xl bg-white/70 border border-gray-200 
+                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+              >
+                {classes.map(c => (
+                  <option key={c} value={c}>{c === 'all' ? 'All Classes' : c}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Add Staff Button */}
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <LoadingSpinner />
+            ) : (
+              <>
+                <UserPlus size={18} />
+                Add Staff
+              </>
+            )}
+          </button>
         </div>
+
+        {/* Content Area */}
+        {isLoading ? (
+          <div className="glass-card rounded-3xl p-12 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading staff directory...</p>
+          </div>
+        ) : error ? (
+          <div className="glass-card rounded-3xl p-12 text-center max-w-2xl mx-auto animate-fade-in">
+            <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+            <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">Unable to Load Staff</h3>
+            <p className="text-gray-600 mb-8 text-lg">{error}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
+            >
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Retry Loading Staff
+            </button>
+          </div>
+        ) : filteredStaff.length === 0 ? (
+          <div className="text-center py-20 animate-fade-in">
+            <Users className="w-24 h-24 text-gray-300 mx-auto mb-6" />
+            <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">No Staff Members Found</h3>
+            <p className="text-gray-600 mb-8 max-w-md mx-auto">Try adjusting your search filters or add new staff members.</p>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
+            >
+              <UserPlus className="w-5 h-5" />
+              Add First Staff Member
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
+            {filteredStaff.map((staff, index) => (
+              <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
+                <StaffCard 
+                  staff={staff} 
+                  onClick={() => setSelectedStaff(staff)}
+                  isActive={staff.status === 'active'}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Staff Detail Drawer */}
+      {selectedStaff && (
+        <StaffDrawer 
+          staff={selectedStaff} 
+          onClose={() => setSelectedStaff(null)} 
+        />
       )}
 
-       {/* Staff Detail Drawer */}
-       {selectedStaff && (
-         <StaffDrawer 
-           staff={selectedStaff} 
-           onClose={() => setSelectedStaff(null)} 
-         />
-       )}
+        {/* Add Staff Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+            <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+                <h3 className="text-2xl font-bold text-gray-800">Add New Staff Member</h3>
+                <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                  <X size={24} className="text-gray-600" />
+                </button>
+              </div>
 
-       {/* Add Staff Modal */}
-       {showAddModal && (
-         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+              <form onSubmit={handleAddStaff} className="p-6 space-y-6">
+                {addError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                    {addError}
+                  </div>
+                )}
+
+                {/* Basic Information */}
+                <div className="space-y-4">
+                  <h4 className="font-heading font-semibold text-gray-800">Basic Information</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                      <input
+                        type="text"
+                        name="full_name"
+                        required
+                        value={newStaff.full_name}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                        placeholder="Enter full name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                      <input
+                        type="email"
+                        name="email"
+                        required
+                        value={newStaff.email}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                        placeholder="email@example.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                      <input
+                        type="password"
+                        name="password"
+                        required
+                        value={newStaff.password}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                        placeholder="At least 6 characters"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+                      <input
+                        type="password"
+                        name="confirmPassword"
+                        required
+                        value={newStaff.confirmPassword}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                        placeholder="Confirm password"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={newStaff.phone}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="(555) 123-4567"
+                    />
+                  </div>
+                </div>
+
+                {/* Employment Details */}
+                <div className="space-y-4 pt-4 border-t border-gray-200">
+                  <h4 className="font-heading font-semibold text-gray-800">Employment Details</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>
+                      <select
+                        name="role_title"
+                        value={newStaff.role_title}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      >
+                        <option value="Teacher">Teacher</option>
+                        <option value="Assistant">Assistant</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Class</label>
+                      <select
+                        name="assigned_class"
+                        value={newStaff.assigned_class}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      >
+                        <option value="">Select Class</option>
+                        {classOptions.map(cls => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-4 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isAdding}
+                    className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isAdding ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Staff Member'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+       {/* Edit Staff Modal */}
+       {showEditModal && (
+         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
            <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
              <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
-               <h3 className="text-2xl font-bold text-gray-800">Add New Staff Member</h3>
-               <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+               <h3 className="text-2xl font-bold text-gray-800">Edit Staff Member</h3>
+               <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
                  <X size={24} className="text-gray-600" />
                </button>
              </div>
 
-             <form onSubmit={handleAddStaff} className="p-6 space-y-6">
-               {addError && (
+             <form onSubmit={handleUpdateStaff} className="p-6 space-y-6">
+               {editError && (
                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
-                   {addError}
+                   {editError}
                  </div>
                )}
 
@@ -661,33 +926,6 @@ return (
                        onChange={handleInputChange}
                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
                        placeholder="email@example.com"
-                     />
-                   </div>
-                 </div>
-
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
-                     <input
-                       type="password"
-                       name="password"
-                       required
-                       value={newStaff.password}
-                       onChange={handleInputChange}
-                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                       placeholder="At least 6 characters"
-                     />
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
-                     <input
-                       type="password"
-                       name="confirmPassword"
-                       required
-                       value={newStaff.confirmPassword}
-                       onChange={handleInputChange}
-                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                       placeholder="Confirm password"
                      />
                    </div>
                  </div>
@@ -724,19 +962,19 @@ return (
                    </div>
                    <div>
                      <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Class</label>
-                      <select
-                        name="assigned_class"
-                        value={newStaff.assigned_class}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                      >
-                        <option value="">Select Class</option>
-                        {classOptions.map(cls => (
-                          <option key={cls.id} value={cls.id}>
-                            {cls.name}
-                          </option>
-                        ))}
-                      </select>
+                     <select
+                       name="assigned_class"
+                       value={newStaff.assigned_class}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                     >
+                       <option value="">Select Class</option>
+                       {classOptions.map(cls => (
+                         <option key={cls.id} value={cls.id}>
+                           {cls.name}
+                         </option>
+                       ))}
+                     </select>
                    </div>
                  </div>
                </div>
@@ -745,23 +983,23 @@ return (
                <div className="flex gap-4 pt-4 border-t border-gray-200">
                  <button
                    type="button"
-                   onClick={() => setShowAddModal(false)}
+                   onClick={() => setShowEditModal(false)}
                    className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                  >
                    Cancel
                  </button>
                  <button
                    type="submit"
-                   disabled={isAdding}
+                   disabled={isEditing}
                    className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                  >
-                   {isAdding ? (
+                   {isEditing ? (
                      <>
                        <Loader2 className="w-5 h-5 animate-spin" />
-                       Creating...
+                       Updating...
                      </>
                    ) : (
-                     'Create Staff Member'
+                     'Update Staff Member'
                    )}
                  </button>
                </div>
@@ -769,7 +1007,7 @@ return (
            </div>
          </div>
        )}
-     </div>
-   )
- }
+    </>
+  )
+}
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   DollarSign, TrendingUp, Users, AlertCircle, Download, Send, Clock,
-  CheckCircle, XCircle, Loader2, Plus, Edit, Trash2, Eye, Filter, UserPlus,
+  CheckCircle, XCircle, Loader2, Plus, Edit, Trash2, Eye, Filter, UserPlus, X,
   Calendar, CreditCard, Landmark, Receipt, PiggyBank, Scale, FileText, TrendingDown
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
@@ -12,7 +12,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('[FinanceManagement] Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.')
+  console.error('[FinanceManagement] Missing Supabase environment variables.')
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
@@ -29,7 +29,6 @@ const TRANSACTION_TYPES = {
   OTHER: { label: 'Other', icon: FileText, color: 'text-gray-500', direction: 'BOTH' }
 }
 
-// Status configuration
 const STATUS_CONFIG = {
   PENDING: { label: 'Pending', color: 'bg-accent-yellow/10 text-amber-600', icon: Clock },
   PAID: { label: 'Paid', color: 'bg-accent-green/10 text-accent-green', icon: CheckCircle },
@@ -42,6 +41,7 @@ export default function FinanceManagement() {
   const [isLoading, setIsLoading] = useState(true)
   const [transactions, setTransactions] = useState([])
   const [filteredTransactions, setFilteredTransactions] = useState([])
+  const [outstandingBalances, setOutstandingBalances] = useState([])
   const [stats, setStats] = useState({
     totalIncome: 0,
     totalExpense: 0,
@@ -54,7 +54,7 @@ export default function FinanceManagement() {
   // Filters
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [dateRange, setDateRange] = useState('ALL') // ALL, PENDING, PAID, OVERDUE
+  const [dateRange, setDateRange] = useState('ALL')
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
@@ -99,8 +99,8 @@ export default function FinanceManagement() {
 
     setIsLoading(true)
     try {
-      // Fetch all in parallel
-      const [txRes, childrenRes, parentsRes, staffRes, feesRes] = await Promise.all([
+      // Fetch all data in parallel
+      const [txRes, childrenRes, parentsRes, staffRes, feesRes, balancesRes] = await Promise.all([
         supabase.from('financial_transactions')
           .select(`
             *,
@@ -113,7 +113,8 @@ export default function FinanceManagement() {
         supabase.from('children').select('id, full_name, class_id').order('full_name'),
         supabase.from('profiles').select('id, full_name, email').eq('role', 'PARENT').order('full_name'),
         supabase.from('profiles').select('id, full_name').eq('role', 'STAFF').order('full_name'),
-        supabase.from('fee_structure').select('*').eq('active', true).order('fee_type')
+        supabase.from('fee_structure').select('*').eq('active', true).order('fee_type'),
+        supabase.rpc('get_all_outstanding_balances')
       ])
 
       if (txRes.error) throw txRes.error
@@ -124,6 +125,7 @@ export default function FinanceManagement() {
       setParentsList(parentsRes.data || [])
       setStaffList(staffRes.data || [])
       setFeeStructures(feesRes.data || [])
+      setOutstandingBalances(balancesRes.data || [])
 
       // Calculate stats
       calculateStats(txRes.data || [])
@@ -231,7 +233,7 @@ export default function FinanceManagement() {
   const handleAddTransaction = async (e) => {
     e.preventDefault()
     if (!supabase) {
-      alert('Supabase client not initialized. Check environment variables.')
+      alert('Supabase client not initialized.')
       return
     }
     setIsSubmitting(true)
@@ -351,7 +353,7 @@ export default function FinanceManagement() {
         .update({
           status: 'PAID',
           paid_date: new Date().toISOString().split('T')[0],
-          payment_method: 'CASH' // default, can be updated
+          payment_method: 'CASH'
         })
         .eq('id', id)
 
@@ -362,6 +364,138 @@ export default function FinanceManagement() {
       console.error('Mark paid error:', err)
       alert('Error updating status: ' + err.message)
     }
+  }
+
+  // Export transactions to CSV
+  const exportToCSV = () => {
+    const headers = ['Type', 'Description', 'Child', 'Payer', 'Payee', 'Amount', 'Status', 'Due Date', 'Paid Date', 'Payment Method']
+    const rows = filteredTransactions.map(t => [
+      t.transaction_type,
+      t.description || '',
+      t.child?.full_name || '',
+      t.payer?.full_name || '',
+      t.payee?.full_name || '',
+      t.amount,
+      t.status,
+      t.due_date || '',
+      t.paid_date || '',
+      t.payment_method || ''
+    ])
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `financial-report-${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // Print report
+  const printReport = () => {
+    const printWindow = window.open('', '_blank')
+    const totalDue = outstandingBalances.reduce((sum, b) => sum + Number(b.balance), 0)
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Financial Report - ${new Date().toLocaleDateString()}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1, h2 { color: #333; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .summary { margin-bottom: 20px; }
+            .summary p { margin: 5px 0; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>Financial Report</h1>
+          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+
+          <div class="summary">
+            <h2>Summary</h2>
+            <p><strong>Total Income:</strong> $${stats.totalIncome.toLocaleString()}</p>
+            <p><strong>Total Expenses:</strong> $${stats.totalExpense.toLocaleString()}</p>
+            <p><strong>Net Balance:</strong> $${stats.netBalance.toLocaleString()}</p>
+            <p><strong>Outstanding Payments Due:</strong> $${totalDue.toLocaleString()}</p>
+            <p><strong>Overdue Amount:</strong> $${stats.overdueAmount.toLocaleString()}</p>
+          </div>
+
+          <h2>Outstanding Balances by Child</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Child</th>
+                <th>Parent</th>
+                <th>Amount Due</th>
+                <th>Paid</th>
+                <th>Balance</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${outstandingBalances.map(b => `
+                <tr>
+                  <td>${b.child_name}</td>
+                  <td>${b.parent_name || 'N/A'}</td>
+                  <td>$${Number(b.total_due).toLocaleString()}</td>
+                  <td>$${Number(b.total_paid).toLocaleString()}</td>
+                  <td>$${Number(b.balance).toLocaleString()}</td>
+                  <td>${b.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>All Transactions</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Child</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Due Date</th>
+                <th>Paid Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${transactions.map(t => `
+                <tr>
+                  <td>${t.transaction_type}</td>
+                  <td>${t.description || ''}</td>
+                  <td>${t.child?.full_name || ''}</td>
+                  <td>$${Number(t.amount).toLocaleString()}</td>
+                  <td>${t.status}</td>
+                  <td>${t.due_date || ''}</td>
+                  <td>${t.paid_date || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <p style="margin-top: 30px; font-size: 10px; color: #999;">
+            Generated on ${new Date().toLocaleString()}
+          </p>
+        </body>
+      </html>
+    `
+
+    printWindow.document.write(printContent)
+    printWindow.document.close()
+    printWindow.print()
   }
 
   // Render empty state
@@ -444,8 +578,65 @@ export default function FinanceManagement() {
         </div>
       </div>
 
+      {/* Outstanding Amounts Due Section */}
+      {outstandingBalances.length > 0 && (
+        <div className="glass-card rounded-card p-6 animate-slide-up">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-6 h-6 text-accent-yellow" />
+              <h3 className="font-heading font-bold text-xl text-gray-800">Amounts Due</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                Total Outstanding: <strong className="text-red-600">
+                  ${outstandingBalances.reduce((sum, b) => sum + Number(b.balance), 0).toLocaleString()}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {outstandingBalances.slice(0, 9).map((balance) => (
+              <div key={`${balance.child_id}-${balance.parent_id}`} className="glass-card-inner rounded-xl p-4 border-l-4 border-accent-yellow">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <p className="font-semibold text-gray-800">{balance.child_name}</p>
+                    <p className="text-xs text-gray-500">{balance.parent_name || 'No parent assigned'}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    balance.status === 'OVERDUE' ? 'bg-red-100 text-red-600' :
+                    balance.status === 'PAID_IN_FULL' ? 'bg-accent-green/10 text-accent-green' :
+                    'bg-accent-yellow/10 text-amber-600'
+                  }`}>
+                    {balance.status === 'OVERDUE' ? 'Overdue' : balance.status === 'PAID_IN_FULL' ? 'Paid' : 'Owes'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-xs text-gray-500">Due</p>
+                    <p className="font-bold text-red-600">${Number(balance.balance).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Paid</p>
+                    <p className="font-medium text-accent-green">${Number(balance.total_paid).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {outstandingBalances.length > 9 && (
+            <div className="mt-4 text-center">
+              <p className="text-sm text-gray-500">
+                Showing 9 of {outstandingBalances.length} balances
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Transactions Table */}
-      <div className="glass-card rounded-card p-6 animate-slide-up stagger-5">
+      <div className="glass-card rounded-card p-6 animate-slide-up">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
           <h3 className="font-heading font-bold text-xl text-gray-800">Financial Transactions</h3>
 
@@ -486,6 +677,22 @@ export default function FinanceManagement() {
               <option value="OVERDUE">Overdue</option>
               <option value="DUE_SOON">Due in 3 Days</option>
             </select>
+
+            {/* Export & Print buttons */}
+            <button
+              onClick={exportToCSV}
+              className="px-4 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm"
+            >
+              <Download size={16} />
+              Export CSV
+            </button>
+            <button
+              onClick={printReport}
+              className="px-4 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm"
+            >
+              <FileText size={16} />
+              Print Report
+            </button>
 
             {/* Add button */}
             <button
@@ -529,7 +736,7 @@ export default function FinanceManagement() {
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-2">
                           <div className={`w-8 h-8 rounded-lg bg-${typeConfig.color}-100 flex items-center justify-center`}>
-                            <typeConfig.icon size={16} className={`text-${typeConfig.color}-600`} />
+                            <typeConfig.icon size={16} className={`${typeConfig.color}`} />
                           </div>
                           <span className="text-sm font-medium text-gray-800">{typeConfig.label}</span>
                         </div>
@@ -656,283 +863,455 @@ export default function FinanceManagement() {
 
       {/* Add Transaction Modal */}
       {showAddModal && (
-        <TransactionModal
-          formData={formData}
-          handleInputChange={handleInputChange}
-          onSubmit={handleAddTransaction}
-          onClose={() => { setShowAddModal(false); resetForm() }}
-          isSubmitting={isSubmitting}
-          childrenList={childrenList}
-          parentsList={parentsList}
-          staffList={staffList}
-          feeStructures={feeStructures}
-          transactionTypes={TRANSACTION_TYPES}
-          title="Add Transaction"
-        />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+          <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-gray-800">Add Transaction</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                <X size={24} className="text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTransaction} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <h4 className="font-heading font-semibold text-gray-800">Transaction Details</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                    <select
+                      name="transaction_type"
+                      value={formData.transaction_type}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      {Object.entries(TRANSACTION_TYPES).map(([key, val]) => (
+                        <option key={key} value={key}>{val.label} ({val.direction})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="amount"
+                      value={formData.amount}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status *</label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="PAID">Paid</option>
+                      <option value="OVERDUE">Overdue</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+                    <select
+                      name="payment_method"
+                      value={formData.payment_method}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="CARD">Card</option>
+                      <option value="ONLINE">Online</option>
+                      <option value="MOBILE_MONEY">Mobile Money</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+                    <input
+                      type="date"
+                      name="due_date"
+                      value={formData.due_date}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Paid Date</label>
+                    <input
+                      type="date"
+                      name="paid_date"
+                      value={formData.paid_date}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <input
+                    type="text"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="Brief description"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-none"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+              </div>
+
+              {/* Linked Entities */}
+              <div className="space-y-4 pt-4 border-t border-gray-200">
+                <h4 className="font-heading font-semibold text-gray-800">Linked Entities</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Child</label>
+                    <select
+                      name="child_id"
+                      value={formData.child_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select child (optional)</option>
+                      {childrenList.map(child => (
+                        <option key={child.id} value={child.id}>{child.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payer (Parent)</label>
+                    <select
+                      name="payer_id"
+                      value={formData.payer_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select payer (optional)</option>
+                      {parentsList.map(parent => (
+                        <option key={parent.id} value={parent.id}>{parent.full_name} ({parent.email})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payee (Staff/Vendor)</label>
+                    <select
+                      name="payee_id"
+                      value={formData.payee_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select payee (optional)</option>
+                      {staffList.map(staff => (
+                        <option key={staff.id} value={staff.id}>{staff.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Fee Structure</label>
+                    <select
+                      name="fee_structure_id"
+                      value={formData.fee_structure_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select fee (optional)</option>
+                      {feeStructures.map(fee => (
+                        <option key={fee.id} value={fee.id}>
+                          {fee.name} - ${fee.amount} ({fee.fee_type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-4 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Transaction'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Edit Transaction Modal */}
       {showEditModal && (
-        <TransactionModal
-          formData={formData}
-          handleInputChange={handleInputChange}
-          onSubmit={handleUpdateTransaction}
-          onClose={() => { setShowEditModal(false); setEditingTransaction(null); resetForm() }}
-          isSubmitting={isSubmitting}
-          childrenList={childrenList}
-          parentsList={parentsList}
-          staffList={staffList}
-          feeStructures={feeStructures}
-          transactionTypes={TRANSACTION_TYPES}
-          title="Edit Transaction"
-        />
-      )}
-    </div>
-  )
-}
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
+          <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-gray-800">Edit Transaction</h3>
+              <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                <X size={24} className="text-gray-600" />
+              </button>
+            </div>
 
-// Reusable Transaction Modal Component
-function TransactionModal({
-  formData,
-  handleInputChange,
-  onSubmit,
-  onClose,
-  isSubmitting,
-  childrenList,
-  parentsList,
-  staffList,
-  feeStructures,
-  transactionTypes,
-  title
-}) {
-  const typeKeys = Object.keys(transactionTypes)
+            <form onSubmit={handleUpdateTransaction} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <h4 className="font-heading font-semibold text-gray-800">Transaction Details</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                    <select
+                      name="transaction_type"
+                      value={formData.transaction_type}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      {Object.entries(TRANSACTION_TYPES).map(([key, val]) => (
+                        <option key={key} value={key}>{val.label} ({val.direction})</option>
+                      ))}
+                    </select>
+                  </div>
 
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
-          <h3 className="text-2xl font-bold text-gray-800">{title}</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-xl">
-            <X size={24} className="text-gray-600" />
-          </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="amount"
+                      value={formData.amount}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status *</label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="PAID">Paid</option>
+                      <option value="OVERDUE">Overdue</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+                    <select
+                      name="payment_method"
+                      value={formData.payment_method}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="CARD">Card</option>
+                      <option value="ONLINE">Online</option>
+                      <option value="MOBILE_MONEY">Mobile Money</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+                    <input
+                      type="date"
+                      name="due_date"
+                      value={formData.due_date}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Paid Date</label>
+                    <input
+                      type="date"
+                      name="paid_date"
+                      value={formData.paid_date}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <input
+                    type="text"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="Brief description"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-none"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+              </div>
+
+              {/* Linked Entities */}
+              <div className="space-y-4 pt-4 border-t border-gray-200">
+                <h4 className="font-heading font-semibold text-gray-800">Linked Entities</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Child</label>
+                    <select
+                      name="child_id"
+                      value={formData.child_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select child (optional)</option>
+                      {childrenList.map(child => (
+                        <option key={child.id} value={child.id}>{child.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payer (Parent)</label>
+                    <select
+                      name="payer_id"
+                      value={formData.payer_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select payer (optional)</option>
+                      {parentsList.map(parent => (
+                        <option key={parent.id} value={parent.id}>{parent.full_name} ({parent.email})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Payee (Staff/Vendor)</label>
+                    <select
+                      name="payee_id"
+                      value={formData.payee_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select payee (optional)</option>
+                      {staffList.map(staff => (
+                        <option key={staff.id} value={staff.id}>{staff.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Fee Structure</label>
+                    <select
+                      name="fee_structure_id"
+                      value={formData.fee_structure_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="">Select fee (optional)</option>
+                      {feeStructures.map(fee => (
+                        <option key={fee.id} value={fee.id}>
+                          {fee.name} - ${fee.amount} ({fee.fee_type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-4 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Transaction'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-
-        <form onSubmit={onSubmit} className="p-6 space-y-6">
-          {/* Transaction Type */}
-          <div className="space-y-4">
-            <h4 className="font-heading font-semibold text-gray-800">Transaction Details</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
-                <select
-                  name="transaction_type"
-                  value={formData.transaction_type}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                  required
-                >
-                  {typeKeys.map(key => {
-                    const config = transactionTypes[key]
-                    return (
-                      <option key={key} value={key}>{config.label} ({config.direction})</option>
-                    )
-                  })}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  name="amount"
-                  value={formData.amount}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status *</label>
-                <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                  required
-                >
-                  <option value="PENDING">Pending</option>
-                  <option value="PAID">Paid</option>
-                  <option value="OVERDUE">Overdue</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
-                <select
-                  name="payment_method"
-                  value={formData.payment_method}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                >
-                  <option value="CASH">Cash</option>
-                  <option value="BANK_TRANSFER">Bank Transfer</option>
-                  <option value="CARD">Card</option>
-                  <option value="ONLINE">Online</option>
-                  <option value="MOBILE_MONEY">Mobile Money</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
-                <input
-                  type="date"
-                  name="due_date"
-                  value={formData.due_date}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Paid Date</label>
-                <input
-                  type="date"
-                  name="paid_date"
-                  value={formData.paid_date}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-              <input
-                type="text"
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
-                placeholder="Brief description"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleInputChange}
-                rows="3"
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-none"
-                placeholder="Additional notes..."
-              />
-            </div>
-          </div>
-
-          {/* Linked Entities */}
-          <div className="space-y-4 pt-4 border-t border-gray-200">
-            <h4 className="font-heading font-semibold text-gray-800">Linked Entities</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Child</label>
-                <select
-                  name="child_id"
-                  value={formData.child_id}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                >
-                  <option value="">Select child (optional)</option>
-                  {childrenList.map(child => (
-                    <option key={child.id} value={child.id}>{child.full_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Payer (Parent)</label>
-                <select
-                  name="payer_id"
-                  value={formData.payer_id}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                >
-                  <option value="">Select payer (optional)</option>
-                  {parentsList.map(parent => (
-                    <option key={parent.id} value={parent.id}>{parent.full_name} ({parent.email})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Payee (Staff/Vendor)</label>
-                <select
-                  name="payee_id"
-                  value={formData.payee_id}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                >
-                  <option value="">Select payee (optional)</option>
-                  {staffList.map(staff => (
-                    <option key={staff.id} value={staff.id}>{staff.full_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fee Structure</label>
-                <select
-                  name="fee_structure_id"
-                  value={formData.fee_structure_id}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
-                >
-                  <option value="">Select fee (optional)</option>
-                  {feeStructures.map(fee => (
-                    <option key={fee.id} value={fee.id}>
-                      {fee.name} - ${fee.amount} ({fee.fee_type})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-4 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Transaction'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+      )}
     </div>
   )
 }
