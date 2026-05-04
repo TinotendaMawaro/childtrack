@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle } from 'lucide-react'
+import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle, User } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import SkeletonCard from './ui/SkeletonCard'
 import FullScreenLoader from './ui/FullScreenLoader'
+import { supabase } from '../lib/supabaseClient'
 
-// Staff Data (mock API response)
+// Staff Data (mock - kept for fallback)
 const staffData = [
   { id: 1, name: 'Maria Garcia', role: 'Teacher', assignedClass: 'Sunbeam', status: 'active', photo: '👩‍🏫', email: 'maria.garcia@childtrack.com', phone: '(555) 234-5678', hireDate: '2022-01-15', salary: '$4,500/month', payrollStatus: 'Current', performance: 'Excellent', notes: 'Lead teacher for Sunbeam class. Excellent with children.', documents: ['Contract', 'Background Check', 'Certification'] },
   { id: 2, name: 'John Smith', role: 'Teacher', assignedClass: 'Rainbow', status: 'active', photo: '👨‍🏫', email: 'john.smith@childtrack.com', phone: '(555) 345-6789', hireDate: '2021-08-20', salary: '$4,200/month', payrollStatus: 'Current', performance: 'Good', notes: 'Experienced teacher, great curriculum planning.', documents: ['Contract', 'Background Check'] },
@@ -231,31 +232,94 @@ export default function StaffScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [staffList, setStaffList] = useState([])
+  
+  // Add Staff Modal State
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [isAdding, setIsAdding] = useState(false)
+  const [addError, setAddError] = useState('')
+  const [classOptions, setClassOptions] = useState([])
+  
+  // Form state
+  const initialFormState = {
+    full_name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role_title: 'Teacher',
+    assigned_class: '',
+    phone: ''
+  }
+  const [newStaff, setNewStaff] = useState(initialFormState)
 
-  // Live Supabase query
-  useEffect(() => {
+  // Named fetch function to be reused
+  const fetchStaff = async () => {
     setIsLoading(true)
     setError(null)
     
-    const fetchStaff = async () => {
-      try {
-        const { data, error, count } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'STAFF')
-          .order('full_name')
+    try {
+      // Fetch all data in parallel (avoiding join RLS issues)
+      const [staffRes, profilesRes, classesRes] = await Promise.all([
+        supabase.from('staff').select('id, role_title, assigned_class, status, created_at'),
+        supabase.from('profiles').select('id, full_name, email, phone'), // Only core columns
+        supabase.from('classes').select('id, name')
+      ])
 
-        if (error) throw error
+      // Check for errors
+      if (staffRes.error) throw staffRes.error
+      if (profilesRes.error) throw profilesRes.error
+      if (classesRes.error) throw classesRes.error
+
+      // Build lookup maps
+      const profilesMap = (profilesRes.data || []).reduce((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {})
+
+      const classesMap = (classesRes.data || []).reduce((acc, c) => {
+        acc[c.id] = c.name
+        return acc
+      }, {})
+
+      // Also set class options for dropdown (used in Add Modal)
+      setClassOptions(classesRes.data || [])
+
+      // Transform data by joining in memory
+      const transformedData = (staffRes.data || []).map(staff => {
+        const profile = profilesMap[staff.id] || {}
+        const assignedClassName = staff.assigned_class ? (classesMap[staff.assigned_class] || 'Unknown Class') : 'Unassigned'
         
-        setStaffList(data || [])
-      } catch (err) {
-        setError('Failed to load staff data. Please check your connection.')
-        console.error('Staff fetch error:', err)
-      } finally {
-        setIsLoading(false)
-      }
-    }
+        return {
+          id: staff.id,
+          name: profile.full_name || 'Unknown',
+          role: staff.role_title || 'Staff',
+          assignedClass: assignedClassName,
+          status: staff.status?.toLowerCase() || 'active',
+          photo: profile.avatar_url ? '👤' : '👨‍🏫',
+          email: profile.email || '',
+          phone: profile.phone || '',
+          hireDate: staff.created_at ? new Date(staff.created_at).toLocaleDateString() : '',
+          salary: '$3,500/month',
+          payrollStatus: 'Current',
+          performance: 'Good',
+          notes: profile.bio || 'No additional notes.',
+          documents: ['Contract', 'Background Check'],
+          fullProfile: profile,
+          classDetails: null
+        }
+      })
 
+      setStaffList(transformedData)
+    } catch (err) {
+      const errorMessage = err?.message || err?.toString() || 'Unknown error'
+      setError(`Failed to load staff data: ${errorMessage}`)
+      console.error('Staff fetch error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Live Supabase query
+  useEffect(() => {
     fetchStaff()
   }, [])
   const [searchQuery, setSearchQuery] = useState('')
@@ -276,7 +340,144 @@ export default function StaffScreen() {
     return matchesSearch && matchesRole && matchesStatus && matchesClass
   })
 
-  return (
+  // Handle adding new staff
+  const handleAddStaff = async (e) => {
+    e.preventDefault()
+    setAddError(null)
+
+    // Validation
+    if (!newStaff.full_name.trim()) {
+      setAddError('Full name is required')
+      return
+    }
+    if (!newStaff.email.trim() || !newStaff.email.includes('@')) {
+      setAddError('Valid email is required')
+      return
+    }
+    if (!newStaff.password) {
+      setAddError('Password is required')
+      return
+    }
+    if (newStaff.password !== newStaff.confirmPassword) {
+      setAddError('Passwords do not match')
+      return
+    }
+    if (newStaff.password.length < 6) {
+      setAddError('Password must be at least 6 characters')
+      return
+    }
+
+    setIsAdding(true)
+
+    try {
+      // Get admin session
+      const { data: { session: adminSession } } = await supabase.auth.getSession()
+      if (!adminSession) {
+        throw new Error('No active admin session. Please log in as admin first.')
+      }
+
+      // Store admin tokens
+      const adminAccessToken = adminSession.access_token
+      const adminRefreshToken = adminSession.refresh_token
+
+      // Create user (this switches session to new user)
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: newStaff.email,
+        password: newStaff.password,
+        options: {
+          data: { full_name: newStaff.full_name },
+          emailRedirectTo: window.location.origin
+        }
+      })
+
+      if (signUpError) throw signUpError
+      if (!signUpData.user) throw new Error('Failed to create user')
+
+      const userId = signUpData.user.id
+
+      // Restore admin session
+      const { error: restoreError1 } = await supabase.auth.setSession({
+        access_token: adminAccessToken,
+        refresh_token: adminRefreshToken
+      })
+      if (restoreError1) {
+        // Try refresh
+        const { error: refreshError } = await supabase.auth.refreshSession()
+        if (refreshError) {
+          throw new Error('Cannot restore admin session after user creation.')
+        }
+      }
+
+      // Short delay to ensure session is ready
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Verify we're admin
+      const { data: { session: verifySession } } = await supabase.auth.getSession()
+      const { data: adminVerify } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', verifySession?.user?.id)
+        .single()
+
+      if (adminVerify?.role !== 'ADMIN') {
+        throw new Error('Admin privileges lost. Please log out and log back in as admin, then retry.')
+      }
+
+      // Update profile to STAFF
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: newStaff.full_name,
+          role: 'STAFF',
+          phone: newStaff.phone || null
+        })
+        .eq('id', userId)
+
+      if (profileError) {
+        console.error('Profile update failed:', profileError)
+        if (profileError.code === '42501') {
+          throw new Error('Permission denied: Cannot update profile. Admin session may have expired.')
+        }
+        throw new Error(`Profile update error: ${profileError.message}`)
+      }
+
+      // Insert into staff
+      const { error: staffError } = await supabase
+        .from('staff')
+        .insert({
+          id: userId,
+          role_title: newStaff.role_title,
+          assigned_class: newStaff.assigned_class || null,
+          status: 'ACTIVE'
+        })
+
+      if (staffError) {
+        console.error('Staff insert failed:', staffError)
+        if (staffError.code === '42501' || staffError.code === '23503') {
+          throw new Error(`Permission or foreign key error: ${staffError.message}`)
+        }
+        throw new Error(`Staff creation error: ${staffError.message}`)
+      }
+
+      // Success
+      setShowAddModal(false)
+      setNewStaff(initialFormState)
+      await fetchStaff()
+      alert('Staff member added successfully!')
+    } catch (err) {
+      console.error('Add staff error:', err)
+      setAddError(err.message || 'Failed to add staff member')
+   } finally {
+     setIsAdding(false)
+   }
+  }
+
+const handleInputChange = (e) => {
+  const { name, value } = e.target
+  setNewStaff(prev => ({ ...prev, [name]: value }))
+}
+
+return (
     <div className="space-y-6">
       {/* Top Bar */}
       <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
@@ -343,6 +544,7 @@ export default function StaffScreen() {
 
         {/* Add Staff Button */}
         <button 
+          onClick={() => setShowAddModal(true)}
           className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
           disabled={isLoading}
         >
@@ -385,10 +587,13 @@ export default function StaffScreen() {
           <Users className="w-24 h-24 text-gray-300 mx-auto mb-6" />
           <h3 className="font-heading text-2xl font-bold text-gray-800 mb-4">No Staff Members Found</h3>
           <p className="text-gray-600 mb-8 max-w-md mx-auto">Try adjusting your search filters or add new staff members.</p>
-          <button className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
-            <UserPlus className="w-5 h-5" />
-            Add First Staff Member
-          </button>
+           <button 
+             onClick={() => setShowAddModal(true)}
+             className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-lg inline-flex items-center gap-2"
+           >
+             <UserPlus className="w-5 h-5" />
+             Add First Staff Member
+           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
@@ -404,14 +609,167 @@ export default function StaffScreen() {
         </div>
       )}
 
-      {/* Staff Detail Drawer */}
-      {selectedStaff && (
-        <StaffDrawer 
-          staff={selectedStaff} 
-          onClose={() => setSelectedStaff(null)} 
-        />
-      )}
-    </div>
-  )
-}
+       {/* Staff Detail Drawer */}
+       {selectedStaff && (
+         <StaffDrawer 
+           staff={selectedStaff} 
+           onClose={() => setSelectedStaff(null)} 
+         />
+       )}
+
+       {/* Add Staff Modal */}
+       {showAddModal && (
+         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+           <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+             <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+               <h3 className="text-2xl font-bold text-gray-800">Add New Staff Member</h3>
+               <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                 <X size={24} className="text-gray-600" />
+               </button>
+             </div>
+
+             <form onSubmit={handleAddStaff} className="p-6 space-y-6">
+               {addError && (
+                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                   {addError}
+                 </div>
+               )}
+
+               {/* Basic Information */}
+               <div className="space-y-4">
+                 <h4 className="font-heading font-semibold text-gray-800">Basic Information</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                     <input
+                       type="text"
+                       name="full_name"
+                       required
+                       value={newStaff.full_name}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="Enter full name"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                     <input
+                       type="email"
+                       name="email"
+                       required
+                       value={newStaff.email}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="email@example.com"
+                     />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                     <input
+                       type="password"
+                       name="password"
+                       required
+                       value={newStaff.password}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="At least 6 characters"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+                     <input
+                       type="password"
+                       name="confirmPassword"
+                       required
+                       value={newStaff.confirmPassword}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                       placeholder="Confirm password"
+                     />
+                   </div>
+                 </div>
+
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                   <input
+                     type="tel"
+                     name="phone"
+                     value={newStaff.phone}
+                     onChange={handleInputChange}
+                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                     placeholder="(555) 123-4567"
+                   />
+                 </div>
+               </div>
+
+               {/* Employment Details */}
+               <div className="space-y-4 pt-4 border-t border-gray-200">
+                 <h4 className="font-heading font-semibold text-gray-800">Employment Details</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>
+                     <select
+                       name="role_title"
+                       value={newStaff.role_title}
+                       onChange={handleInputChange}
+                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                     >
+                       <option value="Teacher">Teacher</option>
+                       <option value="Assistant">Assistant</option>
+                       <option value="Admin">Admin</option>
+                     </select>
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Class</label>
+                      <select
+                        name="assigned_class"
+                        value={newStaff.assigned_class}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      >
+                        <option value="">Select Class</option>
+                        {classOptions.map(cls => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name}
+                          </option>
+                        ))}
+                      </select>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Actions */}
+               <div className="flex gap-4 pt-4 border-t border-gray-200">
+                 <button
+                   type="button"
+                   onClick={() => setShowAddModal(false)}
+                   className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   type="submit"
+                   disabled={isAdding}
+                   className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                 >
+                   {isAdding ? (
+                     <>
+                       <Loader2 className="w-5 h-5 animate-spin" />
+                       Creating...
+                     </>
+                   ) : (
+                     'Create Staff Member'
+                   )}
+                 </button>
+               </div>
+             </form>
+           </div>
+         </div>
+       )}
+     </div>
+   )
+ }
 

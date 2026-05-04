@@ -1,8 +1,10 @@
 import { Phone, Download, Smartphone, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 export default function MobileOnlyNotice() {
   const navigate = useNavigate()
+  const { signOut } = useAuth()
 
   const handleAppStore = () => {
     // Replace with actual app store links
@@ -12,6 +14,17 @@ export default function MobileOnlyNotice() {
   const handlePlayStore = () => {
     // Replace with actual Play Store link
     window.open('https://play.google.com/store/apps/details?id=com.childtrack.parent', '_blank')
+  }
+
+  const handleBackToLogin = async () => {
+    try {
+      await signOut()
+      navigate('/login')
+    } catch (error) {
+      console.error('Error signing out:', error)
+      // Fallback navigation
+      navigate('/login')
+    }
   }
 
   return (
@@ -56,7 +69,7 @@ export default function MobileOnlyNotice() {
 
         <div className="flex gap-4 pt-4 border-t border-gray-200/50">
           <button
-            onClick={() => navigate('/login')}
+            onClick={handleBackToLogin}
             className="flex-1 bg-primary-blue/90 hover:bg-primary-blue text-white py-3 px-6 rounded-xl font-medium text-sm shadow-lg hover:shadow-xl transition-all"
           >
             Back to Login

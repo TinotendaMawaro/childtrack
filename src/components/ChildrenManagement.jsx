@@ -38,8 +38,8 @@ function ChildCard({ child, onClick }) {
         <p className="text-sm text-gray-500 mb-3">{age} years</p>
         
         <div className="w-full mb-3">
-          <div className="px-3 py-1 bg-gray-100 rounded-full">
-            <span className="text-xs font-medium text-gray-700">{child.classes?.name || 'Unassigned'}</span>
+          <div className="px-3 py-1 bg-gradient-to-r from-primary-blue to-primary-coral text-white rounded-full">
+<span className="text-xs font-semibold">{child.classes ? `${child.classes.curriculum || 'Cambridge'} - ${child.classes.name}` : 'Unassigned'}</span>
           </div>
         </div>
         
@@ -66,15 +66,15 @@ function ChildCard({ child, onClick }) {
 function ChildDrawer({ child, onClose }) {
   const age = child.dob ? new Date().getFullYear() - new Date(child.dob).getFullYear() : 'N/A'
   
-  const health = 'Good' 
-  const allergies = [] 
+  const health = child.health_status || 'Good'
+  const allergies = child.allergies || []
   const parents = child.profiles ? [child.profiles] : []
   const transport = null 
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 lg:backdrop-blur-none" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-md glass-card shadow-2xl z-50 transform transition-transform animate-slide-in-right">
+      <div className="fixed right-0 top-0 h-full w-11/12 max-w-sm sm:max-w-md glass-card shadow-2xl z-50 transform transition-transform animate-slide-in-right">
         <div className="sticky top-0 p-6 border-b bg-white/80 backdrop-blur-xl z-10 flex items-center justify-between">
           <h2 className="font-bold text-2xl text-gray-800">Child Profile</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-xl transition-colors">
@@ -82,7 +82,7 @@ function ChildDrawer({ child, onClose }) {
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto max-h-screen">
+        <div className="p-4 sm:p-6 overflow-y-auto max-h-[90vh] pb-20 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
           <div className="flex flex-col items-center mb-8 pb-6 border-b">
             <div className="w-28 h-28 rounded-full bg-gradient-to-br from-primary-coral to-orange-400 p-[4px] mb-4">
               <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
@@ -94,7 +94,7 @@ function ChildDrawer({ child, onClose }) {
               </div>
             </div>
             <h3 className="text-2xl font-bold text-gray-800 mb-1">{child.full_name}</h3>
-            <p className="text-gray-600">{age} years • {child.classes?.name || 'No class'}</p>
+<p className="text-gray-600">{age} years • {child.classes ? `${child.classes.curriculum || 'Cambridge'} - ${child.classes.name}` : 'No class'}</p>
           </div>
 
           <div className="glass-card-inner p-6 rounded-2xl mb-6">
@@ -188,7 +188,9 @@ export default function ChildrenManagement() {
     awards: '',
     location_coordinates: '{}'
   })
-  const [classes, setClasses] = useState([{id: 'all', name: 'All Classes'}])
+const [classes, setClasses] = useState([{id: 'all', name: 'All Classes'}])
+  const [curriculum, setCurriculum] = useState('Cambridge')
+  const [filteredClasses, setFilteredClasses] = useState([])
   const [parents, setParents] = useState([])
   const [parentSearch, setParentSearch] = useState('')
   const [selectedParent, setSelectedParent] = useState(null)
@@ -232,9 +234,15 @@ export default function ChildrenManagement() {
   }
 
   const fetchClasses = async () => {
-    const { data } = await supabase.from('classes').select('id, name').order('name')
+    const { data } = await supabase.from('classes').select('id, name, curriculum').order('name')
     setClasses([{id: 'all', name: 'All Classes'}, ...(data || [])])
+    setFilteredClasses(data || [])
   }
+
+  useEffect(() => {
+    const filtered = classes.filter(c => !c.id || c.curriculum === curriculum)
+    setFilteredClasses(filtered)
+  }, [curriculum, classes])
 
   const fetchParents = async (search = '') => {
     let query = supabase
@@ -439,14 +447,25 @@ export default function ChildrenManagement() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Curriculum</label>
+                  <select
+                    value={curriculum}
+                    onChange={(e) => setCurriculum(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                  >
+                    <option value="Cambridge">Cambridge</option>
+                    <option value="Zimsec">Zimsec</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Class</label>
                   <select
                     value={newChild.class_id}
                     onChange={(e) => setNewChild({...newChild, class_id: e.target.value})}
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
                   >
-                    <option value="">Select Class</option>
-                    {classes.map(c => (
+                    <option value="">Select Class ({curriculum})</option>
+                    {filteredClasses.filter(c => c.curriculum === curriculum).map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
