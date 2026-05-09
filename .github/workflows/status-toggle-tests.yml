@@ -1,0 +1,74 @@
+name: Child Status Toggle Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/components/ChildrenManagement.jsx'
+      - 'src/components/FinanceManagement.jsx'
+      - 'sync-child-finance-status.sql'
+      - 'financial-summary-views.sql'
+      - 'add-enrollment-dates.sql'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/components/ChildrenManagement.jsx'
+      - 'src/components/FinanceManagement.jsx'
+      - 'sync-child-finance-status.sql'
+      - 'financial-summary-views.sql'
+      - 'add-enrollment-dates.sql'
+
+jobs:
+  test-status-toggle:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Validate SQL files
+      run: bash validate-sql.sh
+
+    - name: Setup test database
+      run: |
+        psql -h localhost -U postgres -d postgres -c "CREATE DATABASE childtrack_test;"
+        export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/childtrack_test"
+
+        # Run schema migrations
+        psql "$DATABASE_URL" -f supabase-schema.sql
+        psql "$DATABASE_URL" -f children-soft-delete-migration.sql
+        psql "$DATABASE_URL" -f add-enrollment-dates.sql
+        psql "$DATABASE_URL" -f sync-child-finance-status.sql
+        psql "$DATABASE_URL" -f financial-summary-views.sql
+
+    - name: Run status toggle integration tests
+      run: |
+        export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/childtrack_test"
+        chmod +x test-status-toggle-integration.sh
+        ./test-status-toggle-integration.sh
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Run linting
+      run: npm run lint

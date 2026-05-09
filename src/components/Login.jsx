@@ -49,12 +49,12 @@ export default function Login({ onSuccess }) {
         
         {/* Top Illustration */}
         <div className="text-center mb-8">
-          <div className="w-28 h-28 mx-auto mb-6 bg-gradient-to-br from-yellow-300/30 to-pink-300/30 
+          <div className="w-28 h-28 mx-auto mb-6 bg-gradient-to-br from-yellow-300/30 to-pink-300/30
                           rounded-3xl flex items-center justify-center backdrop-blur-sm border-2 border-white/30">
-            <div className="text-4xl">👧👦🎒📚</div>
+            <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-full h-full object-cover rounded-2xl" />
           </div>
           <h1 className="text-3xl font-heading font-bold text-gray-800 mb-2">ChildTrack</h1>
-          <p className="text-gray-600 font-medium">Welcome to Nursery Management</p>
+          <p className="text-gray-600 font-medium">track manage protect</p>
         </div>
 
         {error && (

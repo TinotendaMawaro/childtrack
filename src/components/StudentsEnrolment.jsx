@@ -3,12 +3,40 @@ import {
   Search, ChevronDown, UserPlus, X, Heart, AlertTriangle,
   Users, Phone, Mail, Car, GraduationCap, Edit, Trash2, RotateCcw, Archive,
   DollarSign, Calendar, History, ToggleLeft, ToggleRight, TrendingUp, TrendingDown,
-  Shield, FileText, ChevronLeft, ChevronRight
+  Shield, FileText, ChevronLeft, ChevronRight, Save, UserCheck, Clock, CheckCircle
 } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import ConfirmationModal from './ConfirmationModal'
-import StatusAuditTrail from './StatusAuditTrail'
-import AttendanceManagement from './AttendanceManagement'
+import LoadingSpinner from './ui/LoadingSpinner'
+
+// Status options with descriptions and colors
+const STATUS_OPTIONS = {
+  ACTIVE: {
+    label: 'Active',
+    description: 'Student is currently enrolled and active',
+    color: 'bg-green-100 text-green-700 border-green-200',
+    icon: UserCheck
+  },
+  INACTIVE: {
+    label: 'Inactive',
+    description: 'Student is temporarily withdrawn',
+    color: 'bg-amber-100 text-amber-700 border-amber-200',
+    icon: Clock
+  },
+  ARCHIVED: {
+    label: 'Archived',
+    description: 'Student record is permanently archived',
+    color: 'bg-gray-100 text-gray-600 border-gray-200',
+    icon: FileText
+  }
+}
+
+// Status transition rules
+const VALID_TRANSITIONS = {
+  ACTIVE: ['INACTIVE'], // Can only go to INACTIVE
+  INACTIVE: ['ACTIVE', 'ARCHIVED'], // Can reactivate or archive
+  ARCHIVED: [] // Cannot change from archived
+}
 
 // Hook to fetch financial summary for a child
 function useChildFinancialSummary(childId) {
@@ -131,17 +159,8 @@ function StatusBadge({ status }) {
 function ChildCard({ child, onClick, isDeactivated = false }) {
   const age = child.dob ? new Date().getFullYear() - new Date(child.dob).getFullYear() : 'N/A'
   const attendance = child.attendance_average || 95
+  const status = 'present'
   const photo = child.photo_url ? child.photo_url : '👶'
-
-  // Get today's attendance status - for demo, we'll show a mix
-  const getAttendanceStatus = () => {
-    const statuses = ['present', 'absent', 'late']
-    // Use child ID to deterministically assign status for demo
-    const statusIndex = child.id % 3
-    return statuses[statusIndex]
-  }
-
-  const attendanceStatus = getAttendanceStatus()
 
   const statusColors = {
     present: 'bg-accent-green/10 text-accent-green',
@@ -192,8 +211,8 @@ function ChildCard({ child, onClick, isDeactivated = false }) {
           </div>
         </div>
 
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[attendanceStatus]}`}>
-          ● {attendanceStatus === 'present' ? 'Present' : attendanceStatus === 'absent' ? 'Absent' : 'Late'}
+        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[status]}`}>
+          ● {status.charAt(0).toUpperCase() + status.slice(1)}
         </span>
       </div>
     </div>
@@ -363,20 +382,6 @@ function ChildDrawer({ child, onClose, onEdit, onDeactivate, onReactivate, onArc
                 </span>
               </button>
             </div>
-
-            {/* Today's Attendance Status */}
-            <div className="flex items-center gap-4 mb-4">
-              <span className="text-sm text-gray-500">Today:</span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                getAttendanceStatus() === 'present'
-                  ? 'bg-accent-green/10 text-accent-green'
-                  : getAttendanceStatus() === 'absent'
-                  ? 'bg-red-100 text-red-600'
-                  : 'bg-accent-yellow/10 text-amber-600'
-              }`}>
-                {getAttendanceStatus() === 'present' ? '● Present' : getAttendanceStatus() === 'absent' ? '○ Absent' : '◐ Late'}
-              </span>
-            </div>
           </div>
 
           {/* Financial Summary Cards */}
@@ -535,8 +540,981 @@ function ChildDrawer({ child, onClose, onEdit, onDeactivate, onReactivate, onArc
   )
 }
 
-// Main ChildrenManagement Component
-export default function ChildrenManagement() {
+// Status Management Tab Component
+function StatusManagementTab() {
+  const [children, setChildren] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [selectedChild, setSelectedChild] = useState(null)
+  const [statusForm, setStatusForm] = useState({
+    newStatus: '',
+    reason: '',
+    notes: ''
+  })
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 12
+
+  useEffect(() => {
+    fetchChildren()
+  }, [statusFilter])
+
+  const fetchChildren = async () => {
+    setLoading(true)
+    try {
+      let query = supabase
+        .from('children')
+        .select(`
+          *,
+          profiles!parent_id(id, full_name, phone, email),
+          classes!class_id(id, name)
+        `)
+        .order('full_name')
+
+      // Apply status filter if not ALL
+      if (statusFilter !== 'ALL') {
+        query = query.eq('status', statusFilter)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+
+      setChildren(data || [])
+    } catch (error) {
+      console.error('Error fetching children:', error)
+      setChildren([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filter children based on search
+  const filteredChildren = children.filter(child => {
+    const matchesSearch = child.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         child.profiles?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesSearch
+  })
+
+  // Pagination logic
+  const totalItems = filteredChildren.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedChildren = filteredChildren.slice(startIndex, startIndex + itemsPerPage)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, statusFilter])
+
+  // Open status change modal
+  const openStatusModal = (child) => {
+    setSelectedChild(child)
+    setStatusForm({
+      newStatus: child.status || 'ACTIVE',
+      reason: '',
+      notes: ''
+    })
+    setShowStatusModal(true)
+  }
+
+  // Validate status change
+  const validateStatusChange = async (child, newStatus, reason) => {
+    const errors = []
+
+    // Check if status transition is valid
+    const currentStatus = child.status || 'ACTIVE'
+    if (!VALID_TRANSITIONS[currentStatus]?.includes(newStatus)) {
+      errors.push(`Invalid status transition: ${currentStatus} → ${newStatus}`)
+    }
+
+    // Check if reason is provided
+    if (!reason.trim()) {
+      errors.push('Reason for status change is required')
+    }
+
+    // Business rule validations
+    if (newStatus === 'ARCHIVED' && currentStatus !== 'INACTIVE') {
+      errors.push('Children can only be archived from INACTIVE status')
+    }
+
+    // Check for outstanding financial obligations (if archiving)
+    if (newStatus === 'ARCHIVED') {
+      try {
+        const { data: transactions } = await supabase
+          .from('financial_transactions')
+          .select('id, amount, status')
+          .eq('child_id', child.id)
+          .in('status', ['PENDING', 'OVERDUE'])
+
+        if (transactions && transactions.length > 0) {
+          const totalOwed = transactions.reduce((sum, t) => sum + Number(t.amount), 0)
+          errors.push(`Cannot archive: Child has outstanding payments totaling $${totalOwed.toFixed(2)}`)
+        }
+      } catch (error) {
+        console.warn('Could not verify financial obligations:', error)
+        // Allow proceeding but log the issue
+      }
+    }
+
+    return errors
+  }
+
+  // Handle status change
+  const handleStatusChange = async (e) => {
+    e.preventDefault()
+
+    if (!selectedChild || !statusForm.newStatus) return
+
+    // Run validation
+    const validationErrors = await validateStatusChange(
+      selectedChild,
+      statusForm.newStatus,
+      statusForm.reason
+    )
+
+    if (validationErrors.length > 0) {
+      alert('Validation failed:\n' + validationErrors.join('\n'))
+      return
+    }
+
+    setUpdating(true)
+
+    try {
+      // Update child status
+      const { error: updateError } = await supabase
+        .from('children')
+        .update({
+          status: statusForm.newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedChild.id)
+
+      if (updateError) throw updateError
+
+      // Log the change in audit table
+      const { error: auditError } = await supabase
+        .from('child_status_history')
+        .insert({
+          child_id: selectedChild.id,
+          old_status: selectedChild.status || 'ACTIVE',
+          new_status: statusForm.newStatus,
+          reason: statusForm.reason,
+          notes: statusForm.notes || null
+        })
+
+      if (auditError) {
+        console.error('Audit logging failed:', auditError)
+        // Don't fail the whole operation for audit errors
+      }
+
+      // Refresh data
+      await fetchChildren()
+
+      // Close modal and show success
+      setShowStatusModal(false)
+      setSelectedChild(null)
+      alert(`Child status updated successfully: ${selectedChild.status || 'ACTIVE'} → ${statusForm.newStatus}`)
+
+    } catch (error) {
+      console.error('Error updating child status:', error)
+      alert('Error updating child status: ' + error.message)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  // Get available status options for current child
+  const getAvailableStatuses = (child) => {
+    const currentStatus = child.status || 'ACTIVE'
+    const available = VALID_TRANSITIONS[currentStatus] || []
+
+    // Always include current status as an option
+    return [currentStatus, ...available]
+  }
+
+  const handleFormChange = (field, value) => {
+    setStatusForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  if (loading) {
+    return (
+      <div className="glass-card rounded-3xl p-12 text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading status management...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 font-heading">Status Management</h2>
+          <p className="text-gray-600 mt-1">Manage student enrollment status and track changes</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+          <Shield className="w-4 h-4" />
+          <span className="text-sm font-medium">Admin Only</span>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+        <div className="flex flex-col sm:flex-row gap-3 flex-1">
+          {/* Search */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search by child or parent name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-gray-800"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue appearance-none cursor-pointer"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="ACTIVE">Active Only</option>
+            <option value="INACTIVE">Inactive Only</option>
+            <option value="ARCHIVED">Archived Only</option>
+          </select>
+        </div>
+
+        {/* Stats */}
+        <div className="flex gap-4 text-sm">
+          <div className="px-3 py-2 bg-green-50 text-green-700 rounded-lg">
+            <span className="font-medium">{children.filter(c => c.status === 'ACTIVE').length}</span> Active
+          </div>
+          <div className="px-3 py-2 bg-amber-50 text-amber-700 rounded-lg">
+            <span className="font-medium">{children.filter(c => c.status === 'INACTIVE').length}</span> Inactive
+          </div>
+          <div className="px-3 py-2 bg-gray-50 text-gray-600 rounded-lg">
+            <span className="font-medium">{children.filter(c => c.status === 'ARCHIVED').length}</span> Archived
+          </div>
+        </div>
+      </div>
+
+      {/* Children Table */}
+      <div className="glass-card rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50/50">
+              <tr>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Child</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Parent</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Class</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Current Status</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Last Updated</th>
+                <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {paginatedChildren.map((child) => {
+                const statusInfo = STATUS_OPTIONS[child.status || 'ACTIVE']
+                const StatusIcon = statusInfo.icon
+
+                return (
+                  <tr key={child.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center">
+                          <span className="text-sm font-bold text-white">
+                            {child.photo_url || '👶'}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{child.full_name}</p>
+                          <p className="text-sm text-gray-500">
+                            {child.dob ? `${new Date().getFullYear() - new Date(child.dob).getFullYear()} years old` : 'Age unknown'}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div>
+                        <p className="font-medium text-gray-900">{child.profiles?.full_name || 'No parent assigned'}</p>
+                        <p className="text-sm text-gray-500">{child.profiles?.email || ''}</p>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-sm text-gray-600">
+                        {child.classes?.name || 'No class assigned'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
+                        <StatusIcon className="w-4 h-4" />
+                        {statusInfo.label}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-sm text-gray-500">
+                        {child.updated_at ? new Date(child.updated_at).toLocaleDateString() : 'Never'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <button
+                        onClick={() => openStatusModal(child)}
+                        className="px-4 py-2 bg-primary-blue text-white rounded-lg hover:bg-primary-blue/90 transition-colors text-sm font-medium"
+                      >
+                        Change Status
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredChildren.length === 0 && (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">No children found matching your criteria.</p>
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-t">
+            <div className="text-sm text-gray-500">
+              Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} children
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                  if (pageNum > totalPages) return null
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-1 rounded text-sm ${
+                        currentPage === pageNum
+                          ? 'bg-primary-blue text-white'
+                          : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Status Change Modal */}
+      {showStatusModal && selectedChild && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowStatusModal(false)} />
+
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-gray-800 font-heading">Change Child Status</h3>
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStatusChange} className="p-6 space-y-6">
+              {/* Child Info */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-semibold text-gray-900 mb-2">Child Information</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Name:</span>
+                    <span className="ml-2 font-medium">{selectedChild.full_name}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Current Status:</span>
+                    <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+                      STATUS_OPTIONS[selectedChild.status || 'ACTIVE'].color
+                    }`}>
+                      {STATUS_OPTIONS[selectedChild.status || 'ACTIVE'].label}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Parent:</span>
+                    <span className="ml-2">{selectedChild.profiles?.full_name || 'Not assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Class:</span>
+                    <span className="ml-2">{selectedChild.classes?.name || 'Not assigned'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  New Status <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-1 gap-3">
+                  {getAvailableStatuses(selectedChild).map((statusKey) => {
+                    const statusInfo = STATUS_OPTIONS[statusKey]
+                    const StatusIcon = statusInfo.icon
+                    const isCurrent = statusKey === (selectedChild.status || 'ACTIVE')
+
+                    return (
+                      <label
+                        key={statusKey}
+                        className={`relative flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          statusForm.newStatus === statusKey
+                            ? 'border-primary-blue bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="status"
+                          value={statusKey}
+                          checked={statusForm.newStatus === statusKey}
+                          onChange={(e) => handleFormChange('newStatus', e.target.value)}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className={`w-10 h-10 rounded-lg ${statusInfo.color} flex items-center justify-center`}>
+                            <StatusIcon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{statusInfo.label}</span>
+                              {isCurrent && (
+                                <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                  Current
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 mt-1">{statusInfo.description}</p>
+                          </div>
+                          {statusForm.newStatus === statusKey && (
+                            <CheckCircle className="w-5 h-5 text-primary-blue" />
+                          )}
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+
+                {/* Transition Warnings */}
+                {selectedChild.status && statusForm.newStatus !== selectedChild.status && (
+                  <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-amber-800">Status Change Warning</p>
+                        <p className="text-sm text-amber-700 mt-1">
+                          {statusForm.newStatus === 'ARCHIVED'
+                            ? 'Archiving a child is permanent and cannot be undone. The child record will be hidden from regular views.'
+                            : statusForm.newStatus === 'INACTIVE'
+                            ? 'Inactive children can be reactivated later. All associated data will be preserved.'
+                            : 'Reactivating will restore the child to active status with full functionality.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Reason Required */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Change <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={statusForm.reason}
+                  onChange={(e) => handleFormChange('reason', e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue appearance-none"
+                  required
+                >
+                  <option value="">Select a reason...</option>
+                  <option value="Graduated">Student Graduated</option>
+                  <option value="Withdrawn">Parent Withdrew Student</option>
+                  <option value="Transferred">Transferred to Another School</option>
+                  <option value="Medical Leave">Medical Leave</option>
+                  <option value="Administrative">Administrative Decision</option>
+                  <option value="Reactivation">Reactivating Student</option>
+                  <option value="Data Cleanup">Data Cleanup/Archival</option>
+                  <option value="Other">Other (specify in notes)</option>
+                </select>
+              </div>
+
+              {/* Additional Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  value={statusForm.notes}
+                  onChange={(e) => handleFormChange('notes', e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue resize-vertical"
+                  placeholder="Any additional context or notes about this status change..."
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                  disabled={updating}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating || !statusForm.reason.trim()}
+                  className="flex-1 px-6 py-3 rounded-xl bg-primary-blue text-white font-medium shadow-lg hover:bg-primary-blue/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {updating ? (
+                    <>
+                      <LoadingSpinner />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      Update Status
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Audit Trails Tab Component
+function AuditTrailsTab() {
+  const [auditLogs, setAuditLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [childFilter, setChildFilter] = useState('')
+  const [adminFilter, setAdminFilter] = useState('')
+  const [dateRange, setDateRange] = useState('30') // days
+  const [statusFilter, setStatusFilter] = useState('ALL')
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 25
+
+  // Available filter options
+  const [children, setChildren] = useState([])
+  const [admins, setAdmins] = useState([])
+
+  useEffect(() => {
+    fetchAuditLogs()
+    fetchFilterOptions()
+  }, [childFilter, adminFilter, dateRange, statusFilter])
+
+  const fetchFilterOptions = async () => {
+    try {
+      // Get all children for filter
+      const { data: childrenData } = await supabase
+        .from('children')
+        .select('id, full_name')
+        .order('full_name')
+
+      setChildren(childrenData || [])
+
+      // Get all admins for filter
+      const { data: adminData } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('role', 'ADMIN')
+        .order('full_name')
+
+      setAdmins(adminData || [])
+    } catch (error) {
+      console.error('Error fetching filter options:', error)
+    }
+  }
+
+  const fetchAuditLogs = async () => {
+    setLoading(true)
+    try {
+      let query = supabase
+        .from('child_status_history')
+        .select(`
+          *,
+          children!child_id(id, full_name),
+          profiles!changed_by(id, full_name)
+        `)
+        .order('changed_at', { ascending: false })
+
+      // Apply filters
+      if (childFilter) {
+        query = query.eq('child_id', childFilter)
+      }
+
+      if (adminFilter) {
+        query = query.eq('changed_by', adminFilter)
+      }
+
+      if (dateRange !== 'all') {
+        const daysAgo = new Date()
+        daysAgo.setDate(daysAgo.getDate() - parseInt(dateRange))
+        query = query.gte('changed_at', daysAgo.toISOString())
+      }
+
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'CHANGES') {
+          // Only show actual status changes (exclude no-op entries)
+          query = query.neq('old_status', 'new_status')
+        } else {
+          query = query.eq('new_status', statusFilter)
+        }
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+
+      setAuditLogs(data || [])
+    } catch (error) {
+      console.error('Error fetching audit logs:', error)
+      setAuditLogs([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filter logs based on search query
+  const filteredLogs = auditLogs.filter(log => {
+    if (!searchQuery) return true
+    const childName = log.children?.full_name || ''
+    const adminName = log.profiles?.full_name || ''
+    const reason = log.reason || ''
+    const notes = log.notes || ''
+
+    const searchLower = searchQuery.toLowerCase()
+    return childName.toLowerCase().includes(searchLower) ||
+           adminName.toLowerCase().includes(searchLower) ||
+           reason.toLowerCase().includes(searchLower) ||
+           notes.toLowerCase().includes(searchLower)
+  })
+
+  // Pagination logic
+  const totalItems = filteredLogs.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedLogs = filteredLogs.slice(startIndex, startIndex + itemsPerPage)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, childFilter, adminFilter, dateRange, statusFilter])
+
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString)
+    return {
+      date: date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }),
+      time: date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+  }
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'ACTIVE': return 'bg-green-100 text-green-700'
+      case 'INACTIVE': return 'bg-amber-100 text-amber-700'
+      case 'ARCHIVED': return 'bg-gray-100 text-gray-600'
+      default: return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="glass-card rounded-3xl p-12 text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading audit trails...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 font-heading">Audit Trails</h2>
+          <p className="text-gray-600 mt-1">Track all child status changes and administrative actions</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1 bg-purple-50 text-purple-700 rounded-full">
+          <FileText className="w-4 h-4" />
+          <span className="text-sm font-medium">Audit Log</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="glass-card rounded-xl p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search logs..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-sm"
+            />
+          </div>
+
+          {/* Child Filter */}
+          <select
+            value={childFilter}
+            onChange={(e) => setChildFilter(e.target.value)}
+            className="px-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-sm appearance-none"
+          >
+            <option value="">All Children</option>
+            {children.map(child => (
+              <option key={child.id} value={child.id}>{child.full_name}</option>
+            ))}
+          </select>
+
+          {/* Admin Filter */}
+          <select
+            value={adminFilter}
+            onChange={(e) => setAdminFilter(e.target.value)}
+            className="px-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-sm appearance-none"
+          >
+            <option value="">All Admins</option>
+            {admins.map(admin => (
+              <option key={admin.id} value={admin.id}>{admin.full_name}</option>
+            ))}
+          </select>
+
+          {/* Date Range */}
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="px-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-sm appearance-none"
+          >
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all">All time</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-3 rounded-xl bg-white/70 border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 focus:border-primary-blue text-sm appearance-none"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="ACTIVE">Active Only</option>
+            <option value="INACTIVE">Inactive Only</option>
+            <option value="ARCHIVED">Archived Only</option>
+            <option value="CHANGES">Changes Only</option>
+          </select>
+
+          {/* Refresh Button */}
+          <button
+            onClick={fetchAuditLogs}
+            className="px-4 py-3 rounded-xl bg-primary-blue text-white hover:bg-primary-blue/90 transition-colors text-sm font-medium"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Audit Logs Table */}
+      <div className="glass-card rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50/50">
+              <tr>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Date & Time</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Child</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Status Change</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Changed By</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Reason</th>
+                <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {paginatedLogs.map((log) => {
+                const { date, time } = formatDateTime(log.changed_at)
+                const isStatusChange = log.old_status !== log.new_status
+
+                return (
+                  <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-4 px-6">
+                      <div>
+                        <div className="font-medium text-gray-900">{date}</div>
+                        <div className="text-sm text-gray-500">{time}</div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center">
+                          <span className="text-sm font-bold text-white">
+                            {log.children?.full_name?.split(' ').map(n => n[0]).join('') || '?'}
+                          </span>
+                        </div>
+                        <span className="font-medium text-gray-900">
+                          {log.children?.full_name || 'Unknown Child'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        {isStatusChange ? (
+                          <>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.old_status)}`}>
+                              {log.old_status || 'None'}
+                            </span>
+                            <span className="text-gray-400">→</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.new_status)}`}>
+                              {log.new_status}
+                            </span>
+                          </>
+                        ) : (
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.new_status)}`}>
+                            {log.new_status} (No Change)
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="font-medium text-gray-900">
+                        {log.profiles?.full_name || 'System'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-sm text-gray-600 max-w-xs truncate">
+                        {log.reason || 'No reason specified'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-sm text-gray-600 max-w-xs truncate">
+                        {log.notes || 'No additional notes'}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredLogs.length === 0 && (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">
+              {auditLogs.length === 0
+                ? 'No status changes have been recorded yet.'
+                : 'No audit logs match your current filters.'
+              }
+            </p>
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-t">
+            <div className="text-sm text-gray-500">
+              Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} audit entries
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                  if (pageNum > totalPages) return null
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-1 rounded text-sm ${
+                        currentPage === pageNum
+                          ? 'bg-primary-blue text-white'
+                          : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pagination Info */}
+        {filteredLogs.length > 0 && totalPages <= 1 && (
+          <div className="px-6 py-4 bg-gray-50 border-t text-sm text-gray-600 text-center">
+            Showing {filteredLogs.length} of {auditLogs.length} audit entries
+            {dateRange !== 'all' && ` (last ${dateRange} days)`}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Main StudentsEnrolment Component
+export default function StudentsEnrolment() {
   const [children, setChildren] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -568,36 +1546,36 @@ export default function ChildrenManagement() {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 12
 
-  // Tab management - includes audit trail
-  const [activeTab, setActiveTab] = useState('active') // 'active' | 'deactivated' | 'attendance' | 'audit-trail'
+  // Tab management - now includes children management, audit trails, and status management
+  const [activeTab, setActiveTab] = useState('children') // 'children' | 'audit-trails' | 'status-management'
   const [deactivatedChildren, setDeactivatedChildren] = useState([])
   const [isDeactivating, setIsDeactivating] = useState(false)
   const [isReactivating, setIsReactivating] = useState(false)
 
-    // Edit states
-    const [editingChild, setEditingChild] = useState(null)
-    const [showEditModal, setShowEditModal] = useState(false)
-    const [editLoading, setEditLoading] = useState(false)
-    const [editChild, setEditChild] = useState({
-      first_name: '',
-      last_name: '',
-      middle_name: '',
-      dob: '',
-      class_id: '',
-      parent_id: '',
-      photo_url: '',
-      performance: 'Good',
-      attendance_average: '',
-      awards: '',
-      location_coordinates: '{}'
-    })
+  // Edit states
+  const [editingChild, setEditingChild] = useState(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
+  const [editChild, setEditChild] = useState({
+    first_name: '',
+    last_name: '',
+    middle_name: '',
+    dob: '',
+    class_id: '',
+    parent_id: '',
+    photo_url: '',
+    performance: 'Good',
+    attendance_average: '',
+    awards: '',
+    location_coordinates: '{}'
+  })
 
-    // Delete confirmation modal state
-    const [deleteConfirmConfig, setDeleteConfirmConfig] = useState({
-      isOpen: false,
-      childId: null,
-      isLoading: false
-    })
+  // Delete confirmation modal state
+  const [deleteConfirmConfig, setDeleteConfirmConfig] = useState({
+    isOpen: false,
+    childId: null,
+    isLoading: false
+  })
 
   useEffect(() => {
     fetchChildren()
@@ -617,19 +1595,38 @@ export default function ChildrenManagement() {
   const fetchActiveChildren = async () => {
     setLoading(true)
     try {
-      let query = supabase
-        .from('children')
-        .select(`
-          *,
-          profiles!parent_id(id, full_name, phone, email),
-          classes!class_id(id, name)
-        `)
-        .eq('status', 'ACTIVE')
-        .order('full_name', { ascending: true })
+      const [childrenRes, profilesRes, classesRes] = await Promise.allSettled([
+        supabase
+          .from('children')
+          .select('*')
+          .eq('status', 'ACTIVE')
+          .order('full_name', { ascending: true }),
+        supabase.from('profiles').select('id, full_name, phone, email'),
+        supabase.from('classes').select('id, name, curriculum')
+      ])
 
-      const { data, error } = await query
-      if (error) throw error
-      setChildren(data || [])
+      const childrenData = childrenRes.status === 'fulfilled' ? childrenRes.value.data || [] : []
+      const profilesData = profilesRes.status === 'fulfilled' ? profilesRes.value.data || [] : []
+      const classesData = classesRes.status === 'fulfilled' ? classesRes.value.data || [] : []
+
+      // Map profiles and classes to children
+      const profilesMap = profilesData.reduce((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {})
+
+      const classesMap = classesData.reduce((acc, c) => {
+        acc[c.id] = c
+        return acc
+      }, {})
+
+      const enrichedChildren = childrenData.map(child => ({
+        ...child,
+        profiles: profilesMap[child.parent_id],
+        classes: classesMap[child.class_id]
+      }))
+
+      setChildren(enrichedChildren)
     } catch (error) {
       console.error('Error fetching active children:', error)
       setChildren([])
@@ -657,7 +1654,7 @@ export default function ChildrenManagement() {
   }
 
   const fetchChildren = async () => {
-    if (activeTab === 'active') {
+    if (activeTab === 'children') {
       await fetchActiveChildren()
     } else {
       await fetchDeactivatedChildren()
@@ -898,7 +1895,7 @@ export default function ChildrenManagement() {
 
       if (error) throw error
 
-      if (activeTab === 'active') {
+      if (activeTab === 'children') {
         await fetchActiveChildren() // Refresh active list
       }
       alert('Child deactivated successfully!')
@@ -925,7 +1922,7 @@ export default function ChildrenManagement() {
 
       if (error) throw error
 
-      if (activeTab === 'deactivated') {
+      if (activeTab === 'children') {
         await fetchDeactivatedChildren() // Refresh deactivated list
       }
       alert('Child reactivated successfully!')
@@ -950,7 +1947,7 @@ export default function ChildrenManagement() {
 
       if (error) throw error
 
-      if (activeTab === 'deactivated') {
+      if (activeTab === 'children') {
         await fetchDeactivatedChildren() // Refresh deactivated list
       }
       alert('Child archived permanently!')
@@ -978,7 +1975,7 @@ export default function ChildrenManagement() {
     }
   }
 
-  const filteredChildren = (activeTab === 'active' ? children : deactivatedChildren).filter(child => {
+  const filteredChildren = (activeTab === 'children' ? children : deactivatedChildren).filter(child => {
     const matchesSearch = child.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesClass = classFilter === 'all' || child.class_id === classFilter
     return matchesSearch && matchesClass
@@ -995,7 +1992,7 @@ export default function ChildrenManagement() {
     setCurrentPage(1)
   }, [searchQuery, classFilter, activeTab])
 
-  if (loading) {
+  if (loading && activeTab === 'children') {
     return (
       <div className="glass-card rounded-3xl p-12 text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
@@ -1006,84 +2003,181 @@ export default function ChildrenManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-        <div className="flex flex-col sm:flex-row gap-3 flex-1">
-          <div className="relative flex-1 sm:w-80 glass-input backdrop-blur-xl">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Search children by name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-transparent border-none outline-none text-gray-800 placeholder-gray-500 rounded-2xl"
-            />
-          </div>
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="w-full sm:w-52 px-4 py-3 rounded-2xl glass-input backdrop-blur-xl border-none outline-none appearance-none cursor-pointer bg-transparent"
-          >
-            {classes.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-2xl hover:shadow-glow-coral transition-all flex items-center gap-2 whitespace-nowrap ml-auto"
-        >
-          <UserPlus size={20} />
-          Add Child
-        </button>
-      </div>
-
-      {/* Sub-tabs for Children Management */}
+      {/* Sub-tabs for Students/Enrolment Management */}
       <div className="flex gap-6 border-b border-gray-200 overflow-x-auto">
         <button
-          onClick={() => setActiveTab('active')}
+          onClick={() => setActiveTab('children')}
           className={`pb-3 px-1 font-medium transition-colors whitespace-nowrap ${
-            activeTab === 'active'
+            activeTab === 'children'
               ? 'border-b-2 border-primary-blue text-primary-blue'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          Active Students ({children.length})
+          Children Management ({children.length})
         </button>
         <button
-          onClick={() => setActiveTab('deactivated')}
-          className={`pb-3 px-1 font-medium transition-colors whitespace-nowrap ${
-            activeTab === 'deactivated'
-              ? 'border-b-2 border-primary-blue text-primary-blue'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Deactivated ({deactivatedChildren.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('attendance')}
-          className={`pb-3 px-1 font-medium transition-colors whitespace-nowrap ${
-            activeTab === 'attendance'
-              ? 'border-b-2 border-primary-blue text-primary-blue'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Attendance
-        </button>
-
-        <button
-          onClick={() => setActiveTab('audit-trail')}
+          onClick={() => setActiveTab('audit-trails')}
           className={`pb-3 px-1 font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'audit-trail'
+            activeTab === 'audit-trails'
               ? 'border-b-2 border-primary-blue text-primary-blue'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <FileText size={16} />
-          Audit Trail
+          Audit Trails
+        </button>
+        <button
+          onClick={() => setActiveTab('status-management')}
+          className={`pb-3 px-1 font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${
+            activeTab === 'status-management'
+              ? 'border-b-2 border-primary-blue text-primary-blue'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Shield size={16} />
+          Status Management
         </button>
       </div>
+
+      {/* Tab Content */}
+      {activeTab === 'children' && (
+        <>
+          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+            <div className="flex flex-col sm:flex-row gap-3 flex-1">
+              <div className="relative flex-1 sm:w-80 glass-input backdrop-blur-xl">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Search children by name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-transparent border-none outline-none text-gray-800 placeholder-gray-500 rounded-2xl"
+                />
+              </div>
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="w-full sm:w-52 px-4 py-3 rounded-2xl glass-input backdrop-blur-xl border-none outline-none appearance-none cursor-pointer bg-transparent"
+              >
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="btn-gradient-coral px-8 py-3 rounded-2xl text-white font-semibold shadow-2xl hover:shadow-glow-coral transition-all flex items-center gap-2 whitespace-nowrap ml-auto"
+            >
+              <UserPlus size={20} />
+              Add Child
+            </button>
+          </div>
+
+          {/* Children Grid */}
+          {filteredChildren.length === 0 ? (
+            <div className="glass-card rounded-3xl p-16 text-center">
+              <GraduationCap className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-gray-700 mb-2">
+                {activeTab === 'children' ? 'No active children found' : 'No deactivated children found'}
+              </h3>
+              <p className="text-gray-500">
+                {activeTab === 'children'
+                  ? 'Try adjusting your search or filters, or add your first child'
+                  : 'Children that have been deactivated will appear here'
+                }
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+                {paginatedChildren.map((child, index) => (
+                  <ChildCard
+                    key={child.id}
+                    child={child}
+                    onClick={() => setSelectedChild(child)}
+                    isDeactivated={activeTab === 'children' ? false : true}
+                  />
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-8">
+                  <div className="text-sm text-gray-500">
+                    Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} children
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+
+                    <div className="flex gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                        if (pageNum > totalPages) return null
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-3 py-1 rounded text-sm ${
+                              currentPage === pageNum
+                                ? 'bg-primary-blue text-white'
+                                : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'audit-trails' && <AuditTrailsTab />}
+      {activeTab === 'status-management' && <StatusManagementTab />}
+
+      {/* Child Drawer */}
+      {selectedChild && activeTab === 'children' && (
+        <ChildDrawer
+          child={selectedChild}
+          onClose={() => setSelectedChild(null)}
+          onEdit={() => {
+            openEditModal(selectedChild)
+            setSelectedChild(null)
+          }}
+          onDeactivate={(childId, reason) => {
+            setSelectedChild(null)
+            handleDeactivateChild(childId, reason)
+          }}
+          onReactivate={(childId) => {
+            setSelectedChild(null)
+            handleReactivateChild(childId)
+          }}
+          onArchive={(childId) => {
+            setSelectedChild(null)
+            handleArchiveChild(childId)
+          }}
+          activeTab={activeTab}
+        />
+      )}
 
       {/* Add Child Modal */}
       {showAddModal && (
@@ -1469,115 +2563,6 @@ export default function ChildrenManagement() {
             </form>
           </div>
         </div>
-      )}
-
-      {/* Content based on active tab */}
-      {activeTab === 'attendance' ? (
-        <AttendanceManagement />
-      ) : activeTab === 'audit-trail' ? (
-        <StatusAuditTrail />
-      ) : (
-        <>
-          {/* Children Grid */}
-          {filteredChildren.length === 0 ? (
-            <div className="glass-card rounded-3xl p-16 text-center">
-              <GraduationCap className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-gray-700 mb-2">
-                {activeTab === 'active' ? 'No active children found' : 'No deactivated children found'}
-              </h3>
-              <p className="text-gray-500">
-                {activeTab === 'active'
-                  ? 'Try adjusting your search or filters, or add your first child'
-                  : 'Children that have been deactivated will appear here'
-                }
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-                {paginatedChildren.map((child, index) => (
-                  <ChildCard
-                    key={child.id}
-                    child={child}
-                    onClick={() => setSelectedChild(child)}
-                    isDeactivated={activeTab === 'deactivated'}
-                  />
-                ))}
-              </div>
-
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-8">
-                  <div className="text-sm text-gray-500">
-                    Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} children
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-
-                    <div className="flex gap-1">
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
-                        if (pageNum > totalPages) return null
-                        return (
-                          <button
-                            key={pageNum}
-                            onClick={() => setCurrentPage(pageNum)}
-                            className={`px-3 py-1 rounded text-sm ${
-                              currentPage === pageNum
-                                ? 'bg-primary-blue text-white'
-                                : 'hover:bg-gray-100'
-                            }`}
-                          >
-                            {pageNum}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </>
-      )}
-
-      {/* Child Drawer */}
-      {selectedChild && (
-        <ChildDrawer
-          child={selectedChild}
-          onClose={() => setSelectedChild(null)}
-          onEdit={() => {
-            openEditModal(selectedChild)
-            setSelectedChild(null)
-          }}
-          onDeactivate={(childId, reason) => {
-            setSelectedChild(null)
-            handleDeactivateChild(childId, reason)
-          }}
-          onReactivate={(childId) => {
-            setSelectedChild(null)
-            handleReactivateChild(childId)
-          }}
-          onArchive={(childId) => {
-            setSelectedChild(null)
-            handleArchiveChild(childId)
-          }}
-          activeTab={activeTab}
-        />
       )}
 
       {/* Deactivate Confirmation Modal */}

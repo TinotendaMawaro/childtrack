@@ -29,17 +29,17 @@ export default function SplashScreen() {
     <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-blue-400 via-orange-300 to-rose-400">
       {/* Logo Container */}
       <div className="w-full max-w-md mx-auto text-center mb-8">
-        <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-yellow-300/40 to-pink-300/40 
+        <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-yellow-300/40 to-pink-300/40
                         rounded-3xl flex items-center justify-center backdrop-blur-sm border-4 border-white/40 shadow-2xl">
           <div className="w-28 h-28 bg-gradient-to-br from-primary-blue to-primary-coral rounded-2xl flex items-center justify-center shadow-xl animate-pulse">
-            <span className="text-4xl animate-bounce">🌸</span>
+            <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-full h-full object-cover rounded-2xl animate-bounce" />
           </div>
         </div>
         <h1 className="text-4xl md:text-5xl font-heading font-bold bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 bg-clip-text text-transparent mb-2 drop-shadow-lg">
           ChildTrack
         </h1>
         <p className="text-xl text-white/90 font-medium tracking-wide drop-shadow-md">
-          Nursery Management
+          track manage protect
         </p>
       </div>
 

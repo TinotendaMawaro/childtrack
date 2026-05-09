@@ -31,7 +31,7 @@ export default function MobileOnlyNotice() {
     <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50 pt-16 pb-20">
       <div className="max-w-lg xl:max-w-xl w-full glass-card rounded-3xl p-6 sm:p-8 shadow-2xl animate-fade-in mx-4 sm:mx-6 lg:mx-auto">
         <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-accent-pink to-rose-400 rounded-2xl flex items-center justify-center shadow-xl">
-          <Smartphone className="w-12 h-12 text-white" />
+          <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-20 h-20 object-cover rounded-2xl" />
         </div>
         
         <AlertTriangle className="w-16 h-16 text-accent-yellow mx-auto mb-4" />

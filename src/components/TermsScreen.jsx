@@ -23,7 +23,7 @@ export default function TermsScreen() {
         <div className="glass-card rounded-3xl p-8 shadow-2xl">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-2xl flex items-center justify-center shadow-lg">
-              <ShieldCheck className="w-10 h-10 text-white" />
+              <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-16 h-16 object-cover rounded-2xl" />
             </div>
             <h1 className="text-3xl font-heading font-bold text-gray-800 mb-2">Terms & Conditions</h1>
             <p className="text-gray-600 font-medium">Please review and accept before continuing</p>

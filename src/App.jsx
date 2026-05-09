@@ -67,11 +67,11 @@ function Sidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
         <div className="h-20 flex items-center px-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl btn-gradient flex items-center justify-center shadow-lg">
-              <span className="text-white text-xl">🌸</span>
+              <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-full h-full object-cover rounded-2xl" />
             </div>
             <div>
               <h1 className="font-heading font-bold text-lg text-gray-800">ChildTrack</h1>
-              <p className="text-[11px] text-gray-500">Admin Dashboard</p>
+              <p className="text-[11px] text-gray-500">track manage protect</p>
             </div>
           </div>
         </div>
@@ -149,7 +149,7 @@ function TopBar({ setIsOpen, activeItem }) {
 
 
   return (
-    <header className="h-[72px] glass-card border-b border-gray-100 px-6 flex items-center justify-between">
+    <header className="sticky top-0 z-40 h-[72px] glass-card border-b border-gray-100 px-6 flex items-center justify-between">
       <div className="flex items-center gap-4">
         <button 
           onClick={() => setIsOpen(true)}

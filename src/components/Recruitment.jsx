@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle } from 'lucide-react'
+import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle, Edit, Trash2, Plus } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import SkeletonTable from './ui/SkeletonTable'
+import { supabase } from '../lib/supabaseClient'
 // StatCard is defined inline
 
 
@@ -54,7 +55,7 @@ function StatCard({ icon: Icon, label, value, trend, trendUp, color, delay = 0 }
 }
 
 // Applicant Table Row
-function ApplicantRow({ applicant, onView }) {
+function ApplicantRow({ applicant, onView, onEdit, onDelete }) {
   const status = statusConfig[applicant.status]
   const StatusIcon = status.icon
 
@@ -84,20 +85,36 @@ function ApplicantRow({ applicant, onView }) {
         </span>
       </td>
       <td className="py-4 pr-4">
-        <button 
-          onClick={() => onView(applicant)}
-          className="text-xs px-3 py-1.5 bg-primary-blue/10 text-primary-blue hover:bg-primary-blue/20 rounded-lg transition-colors flex items-center gap-1"
-        >
-          <FileText size={12} />
-          View
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onView(applicant)}
+            className="text-xs px-2 py-1 bg-primary-blue/10 text-primary-blue hover:bg-primary-blue/20 rounded transition-colors"
+            title="View Details"
+          >
+            <FileText size={12} />
+          </button>
+          <button
+            onClick={() => onEdit(applicant)}
+            className="text-xs px-2 py-1 bg-amber-100 text-amber-600 hover:bg-amber-200 rounded transition-colors"
+            title="Edit"
+          >
+            <Edit size={12} />
+          </button>
+          <button
+            onClick={() => onDelete(applicant.id)}
+            className="text-xs px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded transition-colors"
+            title="Delete"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       </td>
     </tr>
   )
 }
 
 // Applicant Modal
-function ApplicantModal({ applicant, isOpen, onClose, onApprove, onReject }) {
+function ApplicantModal({ applicant, isOpen, onClose, onApprove, onReject, onEdit, onDelete }) {
   if (!isOpen || !applicant) return null
 
   const status = statusConfig[applicant.status]
@@ -218,40 +235,67 @@ export default function RecruitmentScreen() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // CRUD states
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingApplicant, setEditingApplicant] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Form data
+  const [formData, setFormData] = useState({
+    name: '',
+    position: '',
+    experience: '',
+    status: 'pending',
+    cv: '',
+    notes: '',
+    rating: '3.0/5'
+  })
+
   // Live Supabase query - assume 'applicants' table
   useEffect(() => {
+    fetchApplicants()
+  }, [])
+
+  const fetchApplicants = async () => {
     setIsLoading(true)
     setError(null)
 
-    const fetchApplicants = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('applicants')
-          .select(`
-            *,
-            position !inner()
-          `)
-          .order('applied', { ascending: false })
+    try {
+      const { data, error } = await supabase
+        .from('applicants')
+        .select('*')
+        .order('applied_date', { ascending: false })
 
-        if (error) throw error
+      if (error) throw error
 
-        setApplicants(data || [])
-        setStats({
-          total: data?.length || 0,
-          pending: data?.filter(a => a.status === 'pending').length || 0,
-          interview: data?.filter(a => a.status === 'interview').length || 0,
-          hired: data?.filter(a => a.status === 'hired').length || 0,
-        })
-      } catch (err) {
-        setError('Failed to load applicants: ' + err.message)
-        console.error('Applicants fetch error:', err)
-      } finally {
-        setIsLoading(false)
-      }
+      // Transform data to match UI format
+      const transformedData = (data || []).map(app => ({
+        id: app.id,
+        name: app.name,
+        position: app.position,
+        experience: app.experience,
+        status: app.status,
+        applied: app.applied_date ? `${Math.floor((new Date() - new Date(app.applied_date)) / (1000 * 60 * 60 * 24))} days ago` : 'N/A',
+        cv: app.cv_file || 'CV.pdf',
+        notes: app.notes || '',
+        rating: app.rating || '3.0/5'
+      }))
+
+      setApplicants(transformedData)
+      setStats({
+        total: transformedData.length,
+        pending: transformedData.filter(a => a.status === 'pending').length,
+        interview: transformedData.filter(a => a.status === 'interview').length,
+        hired: transformedData.filter(a => a.status === 'hired').length,
+      })
+    } catch (err) {
+      setError('Failed to load applicants: ' + err.message)
+      console.error('Applicants fetch error:', err)
+    } finally {
+      setIsLoading(false)
     }
-
-    fetchApplicants()
-  }, [])
+  }
 
   const statuses = ['all', 'pending', 'interview', 'hired', 'rejected']
 
@@ -262,14 +306,151 @@ export default function RecruitmentScreen() {
     return matchesSearch && matchesStatus
   })
 
-  const handleApprove = (id) => {
-    setApplicants(applicants.map(app => app.id === id ? { ...app, status: 'hired' } : app))
-    setStats(prev => ({ ...prev, pending: prev.pending - 1, hired: prev.hired + 1 }))
+  const handleApprove = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .update({ status: 'hired' })
+        .eq('id', id)
+
+      if (error) throw error
+
+      await fetchApplicants()
+    } catch (err) {
+      console.error('Error approving applicant:', err)
+      alert('Failed to approve applicant')
+    }
   }
 
-  const handleReject = (id) => {
-    setApplicants(applicants.map(app => app.id === id ? { ...app, status: 'rejected' } : app))
-    setStats(prev => ({ ...prev, pending: prev.pending - 1 }))
+  const handleReject = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .update({ status: 'rejected' })
+        .eq('id', id)
+
+      if (error) throw error
+
+      await fetchApplicants()
+    } catch (err) {
+      console.error('Error rejecting applicant:', err)
+      alert('Failed to reject applicant')
+    }
+  }
+
+  // Add applicant
+  const handleAddApplicant = async (e) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+
+    try {
+      const applicantData = {
+        name: formData.name,
+        position: formData.position,
+        experience: formData.experience,
+        status: formData.status,
+        cv_file: formData.cv,
+        notes: formData.notes,
+        rating: formData.rating,
+        applied_date: new Date().toISOString().split('T')[0]
+      }
+
+      const { error } = await supabase
+        .from('applicants')
+        .insert([applicantData])
+
+      if (error) throw error
+
+      setShowAddModal(false)
+      setFormData({
+        name: '',
+        position: '',
+        experience: '',
+        status: 'pending',
+        cv: '',
+        notes: '',
+        rating: '3.0/5'
+      })
+      await fetchApplicants()
+      alert('Applicant added successfully!')
+    } catch (err) {
+      console.error('Error adding applicant:', err)
+      alert('Failed to add applicant: ' + err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Update applicant
+  const handleUpdateApplicant = async (e) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .update({
+          name: formData.name,
+          position: formData.position,
+          experience: formData.experience,
+          status: formData.status,
+          cv_file: formData.cv,
+          notes: formData.notes,
+          rating: formData.rating
+        })
+        .eq('id', editingApplicant.id)
+
+      if (error) throw error
+
+      setShowEditModal(false)
+      setEditingApplicant(null)
+      await fetchApplicants()
+      alert('Applicant updated successfully!')
+    } catch (err) {
+      console.error('Error updating applicant:', err)
+      alert('Failed to update applicant: ' + err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Delete applicant
+  const handleDeleteApplicant = async (id) => {
+    if (!confirm('Are you sure you want to delete this applicant?')) return
+
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      await fetchApplicants()
+      alert('Applicant deleted successfully!')
+    } catch (err) {
+      console.error('Error deleting applicant:', err)
+      alert('Failed to delete applicant: ' + err.message)
+    }
+  }
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const openEditModal = (applicant) => {
+    setEditingApplicant(applicant)
+    setFormData({
+      name: applicant.name,
+      position: applicant.position,
+      experience: applicant.experience,
+      status: applicant.status,
+      cv: applicant.cv,
+      notes: applicant.notes,
+      rating: applicant.rating
+    })
+    setShowEditModal(true)
   }
 
   return (
@@ -303,42 +484,29 @@ export default function RecruitmentScreen() {
             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
         </div>
-        <button 
+        <button
+          onClick={() => {
+            setFormData({
+              name: '',
+              position: '',
+              experience: '',
+              status: 'pending',
+              cv: '',
+              notes: '',
+              rating: '3.0/5'
+            })
+            setShowAddModal(true)
+          }}
           className="btn-gradient-coral px-6 py-2.5 rounded-xl text-white font-semibold shadow-lg whitespace-nowrap flex items-center gap-2 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={isLoading}
         >
           {isLoading ? (
             <LoadingSpinner />
           ) : (
-            <UserPlus size={18} />
+            <Plus size={18} />
           )}
-          Post New Job
+          Add Applicant
         </button>
       </div>
-
-      {isLoading ? (
-        <div className="glass-card rounded-3xl p-12 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-blue mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading recruitment data...</p>
-        </div>
-      ) : error ? (
-        <div className="glass-card rounded-3xl p-12 text-center max-w-lg mx-auto">
-          <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
-          <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">No Applicants Data</h3>
-          <p className="text-gray-600 mb-8">{error}</p>
-          <button onClick={() => window.location.reload()} className="btn-gradient px-8 py-3 rounded-xl text-white font-semibold shadow-lg inline-flex items-center gap-2">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Reload
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 [&>*]:animate-fade-in">
-          <StatCard icon={UserPlus} label="Total Applicants" value={stats.total} trend="+5" trendUp color="blue" />
-          <StatCard icon={Clock} label="Pending Review" value={stats.pending} trend="-2" trendUp={false} color="yellow" />
-          <StatCard icon={Calendar} label="Interview Scheduled" value={stats.interview} trend="+3" trendUp color="purple" />
-          <StatCard icon={UserCheck} label="Hired" value={stats.hired} trend="+1" trendUp color="green" />
-        </div>
-      )}
 
       {/* Applicants Table */}
       <div className="glass-card rounded-card overflow-hidden shadow-lg">
@@ -371,7 +539,7 @@ export default function RecruitmentScreen() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredApplicants.map((applicant, index) => (
-                    <ApplicantRow key={applicant.id} applicant={applicant} onView={setSelectedApplicant} />
+                    <ApplicantRow key={applicant.id} applicant={applicant} onView={setSelectedApplicant} onEdit={openEditModal} onDelete={handleDeleteApplicant} />
                   ))}
                 </tbody>
               </table>
@@ -380,6 +548,288 @@ export default function RecruitmentScreen() {
         </div>
       </div>
 
+      {/* Add Applicant Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-gray-800">Add New Applicant</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                <X size={24} className="text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddApplicant} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <h4 className="font-heading font-semibold text-gray-800">Applicant Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      required
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="Enter full name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Position *</label>
+                    <select
+                      name="position"
+                      value={formData.position}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      <option value="">Select Position</option>
+                      <option value="Teacher">Teacher</option>
+                      <option value="Assistant">Assistant</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Nurse">Nurse</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Experience</label>
+                    <input
+                      type="text"
+                      name="experience"
+                      value={formData.experience}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="e.g., 3 years"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="pending">Pending Review</option>
+                      <option value="interview">Interview Scheduled</option>
+                      <option value="hired">Hired</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CV File Name</label>
+                  <input
+                    type="text"
+                    name="cv"
+                    value={formData.cv}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="e.g., John_Doe_CV.pdf"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-vertical"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
+                  <input
+                    type="text"
+                    name="rating"
+                    value={formData.rating}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="e.g., 4.5/5"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={20} />
+                      Add Applicant
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Applicant Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 p-6 border-b bg-white/90 backdrop-blur-xl z-10 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-gray-800">Edit Applicant</h3>
+              <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-200 rounded-xl">
+                <X size={24} className="text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateApplicant} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <h4 className="font-heading font-semibold text-gray-800">Applicant Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      required
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="Enter full name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Position *</label>
+                    <select
+                      name="position"
+                      value={formData.position}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                      required
+                    >
+                      <option value="">Select Position</option>
+                      <option value="Teacher">Teacher</option>
+                      <option value="Assistant">Assistant</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Nurse">Nurse</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Experience</label>
+                    <input
+                      type="text"
+                      name="experience"
+                      value={formData.experience}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                      placeholder="e.g., 3 years"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+                    >
+                      <option value="pending">Pending Review</option>
+                      <option value="interview">Interview Scheduled</option>
+                      <option value="hired">Hired</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CV File Name</label>
+                  <input
+                    type="text"
+                    name="cv"
+                    value={formData.cv}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="e.g., John_Doe_CV.pdf"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-vertical"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
+                  <input
+                    type="text"
+                    name="rating"
+                    value={formData.rating}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+                    placeholder="e.g., 4.5/5"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 btn-gradient-coral px-6 py-3 rounded-xl text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Edit size={20} />
+                      Update Applicant
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal */}
       <ApplicantModal
         applicant={selectedApplicant}
@@ -387,6 +837,8 @@ export default function RecruitmentScreen() {
         onClose={() => setSelectedApplicant(null)}
         onApprove={handleApprove}
         onReject={handleReject}
+        onEdit={openEditModal}
+        onDelete={handleDeleteApplicant}
       />
     </div>
   )

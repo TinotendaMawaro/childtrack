@@ -36,8 +36,8 @@ export default function ProtectedRoute({ children, allowedRoles = ['ADMIN'] }) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-8">
         <div className="text-center max-w-md mx-auto">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center shadow-xl animate-spin-slow">
-            <Loader className="w-10 h-10 text-white" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center shadow-xl">
+            <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-16 h-16 object-cover rounded-2xl" />
           </div>
           <h2 className="text-2xl font-heading font-bold text-gray-800 mb-2">Loading Dashboard</h2>
           <p className="text-gray-600">Authenticating and fetching your profile...</p>

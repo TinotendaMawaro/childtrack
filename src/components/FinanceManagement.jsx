@@ -2,20 +2,11 @@ import { useState, useEffect } from 'react'
 import {
   DollarSign, TrendingUp, Users, AlertCircle, Download, Send, Clock,
   CheckCircle, XCircle, Loader2, Plus, Edit, Trash2, Eye, Filter, UserPlus, X,
-  Calendar, CreditCard, Landmark, Receipt, PiggyBank, Scale, FileText, TrendingDown
+  Calendar, CreditCard, Landmark, Receipt, PiggyBank, Scale, FileText, TrendingDown,
+  ChevronLeft, ChevronRight
 } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
 import LoadingSpinner from './ui/LoadingSpinner'
-
-// Initialize Supabase client directly for Finance module
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('[FinanceManagement] Missing Supabase environment variables.')
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { supabase } from '../lib/supabaseClient'
 
 // Transaction type configuration
 const TRANSACTION_TYPES = {
@@ -55,6 +46,10 @@ export default function FinanceManagement() {
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [dateRange, setDateRange] = useState('ALL')
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 25
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false)
@@ -203,7 +198,14 @@ export default function FinanceManagement() {
     }
 
     setFilteredTransactions(filtered)
+    setCurrentPage(1) // Reset to first page when filters change
   }, [typeFilter, statusFilter, dateRange, transactions])
+
+  // Pagination logic
+  const totalItems = filteredTransactions.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + itemsPerPage)
 
   // Form handlers
   const handleInputChange = (e) => {
@@ -726,7 +728,7 @@ export default function FinanceManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filteredTransactions.map((tx) => {
+                {paginatedTransactions.map((tx) => {
                   const typeConfig = TRANSACTION_TYPES[tx.transaction_type] || TRANSACTION_TYPES.OTHER
                   const statusConfig = STATUS_CONFIG[tx.status]
                   const StatusIcon = statusConfig.icon
@@ -841,7 +843,7 @@ export default function FinanceManagement() {
 
         {/* Summary row */}
         {filteredTransactions.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+          <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
             <div className="flex gap-8 text-sm">
               <div>
                 <span className="text-gray-500">Total Count:</span>
@@ -857,6 +859,50 @@ export default function FinanceManagement() {
                 </span>
               </div>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <div className="text-sm text-gray-500 mr-4">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                    if (pageNum > totalPages) return null
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-1 rounded text-sm ${
+                          currentPage === pageNum
+                            ? 'bg-primary-blue text-white'
+                            : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -8,7 +8,9 @@ import FinanceManagement from './FinanceManagement'
 import Recruitment from './Recruitment'
 import SettingsPage from './Settings'
 import ProfilePage from './ProfilePage'
-import { 
+import StatusAuditTrail from './StatusAuditTrail'
+import AttendanceManagement from './AttendanceManagement'
+import {
   LayoutDashboard,
   Baby,
   Users,
@@ -23,15 +25,21 @@ import {
   ChevronDown,
   Menu,
   TrendingUp,
-  LogOut
+  LogOut,
+  UserCheck,
+  ShieldCheck,
+  History,
+  Calendar
 } from 'lucide-react'
 
 // Page titles and descriptions
 export const pageTitles = {
   dashboard: '',
-  children: 'Children',
+  'student-children': 'Children',
+  'student-status-manager': 'Status Manager',
   staff: 'Staff',
   classes: 'Classes',
+  attendance: 'Attendance',
   finance: 'Finance',
   transport: 'Transport',
   recruitment: 'Recruitment',
@@ -41,9 +49,11 @@ export const pageTitles = {
 
 export const pageDescriptions = {
   dashboard: "",
-  children: 'Manage children profiles and information',
+  'student-children': 'Manage children profiles and information',
+  'student-status-manager': 'Manage student status and enrollment',
   staff: 'View and manage staff members',
   classes: 'Manage class schedules and groups',
+  attendance: 'Monitor and manage student attendance records',
   finance: 'Track payments and finances',
   transport: 'Monitor transport routes and drivers',
   recruitment: 'Review job applications and manage hiring pipeline',
@@ -79,17 +89,49 @@ function AnimatedCounter({ end, duration = 2000 }) {
 
 // Sidebar Component
 export function AdminSidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
+  const [expandedItems, setExpandedItems] = useState(() => {
+    const expanded = new Set()
+    menuItems.forEach(item => {
+      if (item.subItems && activeItem.startsWith(item.id + '-')) {
+        expanded.add(item.id)
+      }
+    })
+    expanded.add('student') // Expand student by default
+    return expanded
+  })
+
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { id: 'children', icon: Baby, label: 'Children' },
+    { id: 'student', icon: UserCheck, label: 'Student', subItems: [
+      { id: 'student-children', icon: Baby, label: 'Children' },
+      { id: 'student-status-manager', icon: ShieldCheck, label: 'Status Manager' }
+    ] },
     { id: 'staff', icon: Users, label: 'Staff' },
     { id: 'classes', icon: GraduationCap, label: 'Classes' },
+    { id: 'attendance', icon: Calendar, label: 'Attendance' },
     { id: 'finance', icon: DollarSign, label: 'Finance' },
     { id: 'transport', icon: Bus, label: 'Transport' },
     { id: 'recruitment', icon: UserPlus, label: 'Recruitment' },
     { id: 'settings', icon: Settings, label: 'Settings' },
     { id: 'profile', icon: User, label: 'Profile' },
   ]
+
+  const handleItemClick = (item) => {
+    if (item.subItems) {
+      setExpandedItems(prev => {
+        const next = new Set(prev)
+        if (next.has(item.id)) {
+          next.delete(item.id)
+        } else {
+          next.add(item.id)
+        }
+        return next
+      })
+      // Removed auto-select: do not change activeItem when expanding/collapsing
+    } else {
+      setActiveItem(item.id)
+    }
+  }
 
   return (
     <div className="fixed top-0 left-0 h-full w-[260px] z-50">
@@ -108,11 +150,11 @@ export function AdminSidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
         <div className="h-20 flex items-center px-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl btn-gradient flex items-center justify-center shadow-lg">
-              <span className="text-white text-xl">🌈</span>
+              <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-full h-full object-cover rounded-2xl" />
             </div>
             <div>
-              <h1 className="font-heading font-bold text-lg text-gray-800">My Nursery</h1>
-              <p className="text-[11px] text-gray-500">Nursery Dashboard</p>
+              <h1 className="font-heading font-bold text-lg text-gray-800">ChildTrack</h1>
+              <p className="text-[11px] text-gray-500">track manage protect</p>
             </div>
           </div>
         </div>
@@ -120,22 +162,49 @@ export function AdminSidebar({ activeItem, setActiveItem, isOpen, setIsOpen }) {
         <nav className="p-4 space-y-1">
           {menuItems.map((item) => {
             const Icon = item.icon
-            const isActive = activeItem === item.id
+            const isActive = item.subItems ? activeItem.startsWith(item.id + '-') : activeItem === item.id
+            const isExpanded = expandedItems.has(item.id)
             return (
-              <button
-                key={item.id}
-                onClick={() => setActiveItem(item.id)}
-                className={`
-                  w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200
-                  ${isActive 
-                    ? 'bg-gradient-to-r from-primary-blue to-primary-coral text-white shadow-lg glow-mint transform scale-[1.02]' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:scale-[1.01] glow-mint'
-                  }
-                `}
-              >
-                <Icon size={20} />
-                <span className="font-medium">{item.label}</span>
-              </button>
+              <div key={item.id}>
+                <button
+                  onClick={() => handleItemClick(item)}
+                  className={`
+                    w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200
+                    ${isActive
+                      ? 'bg-gradient-to-r from-primary-blue to-primary-coral text-white shadow-lg glow-mint transform scale-[1.02]'
+                      : 'text-gray-600 hover:bg-gray-50 hover:scale-[1.01] glow-mint'
+                    }
+                  `}
+                >
+                  <Icon size={20} />
+                  <span className="font-medium">{item.label}</span>
+                  {item.subItems && <ChevronDown size={16} className={`ml-auto transition-transform duration-200 ease-out ${isExpanded ? 'rotate-180' : ''}`} />}
+                </button>
+                {item.subItems && (
+                  <div className={`overflow-hidden transition-all duration-200 ease-out ${isExpanded ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    {item.subItems.map((sub) => {
+                      const SubIcon = sub.icon
+                      const isSubActive = activeItem === sub.id
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => setActiveItem(sub.id)}
+                          className={`
+                            w-full flex items-center gap-3 px-4 py-2 ml-6 rounded-xl transition-all duration-200
+                            ${isSubActive
+                              ? 'bg-gradient-to-r from-primary-blue to-primary-coral text-white shadow-lg glow-mint transform scale-[1.02]'
+                              : 'text-gray-600 hover:bg-gray-50 hover:scale-[1.01] glow-mint'
+                            }
+                          `}
+                        >
+                          <SubIcon size={18} />
+                          <span className="font-medium">{sub.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </nav>
@@ -168,7 +237,8 @@ export default function AdminLayout() {
     await signOut()
   }
 
-  const handleImageClick = () => {
+  const handleImageClick = (e) => {
+    e.stopPropagation()
     fileInputRef?.click()
   }
 
@@ -204,15 +274,22 @@ export default function AdminLayout() {
     switch (activeItem) {
       case 'dashboard':
         return <Dashboard />
-      case 'children':
+      case 'student-children':
         return <div className="glass-card rounded-3xl p-12 text-center">
           <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">Children Management</h3>
           <p className="text-gray-600">Coming soon...</p>
         </div>
+       case 'student-status-manager':
+         return <div className="glass-card rounded-3xl p-12 text-center">
+           <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">Status Manager</h3>
+           <p className="text-gray-600">Coming soon...</p>
+         </div>
       case 'staff':
         return <StaffManagement />
       case 'classes':
         return <ClassesManagement />
+      case 'attendance':
+        return <AttendanceManagement />
       case 'finance':
         return <FinanceManagement />
       case 'transport':
@@ -242,7 +319,7 @@ export default function AdminLayout() {
       
       <div className="lg:ml-[260px]">
         {/* Header */}
-        <header className="h-20 glass-card border-b border-gray-100 flex items-center justify-between px-6">
+        <header className="sticky top-0 z-40 h-20 glass-card border-b border-gray-100 flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setIsSidebarOpen(true)}
@@ -269,11 +346,19 @@ export default function AdminLayout() {
               <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-primary-coral rounded-full border-2 border-white"></span>
             </button>
             
-            <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-<div className="text-right hidden sm:block">
+            <div 
+              className="flex items-center gap-3 pl-4 pr-2 py-1 border-l border-gray-200 cursor-pointer hover:bg-gray-100/50 rounded-xl transition-colors"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowDropdown(prev => !prev)
+                setShowNotifications(false)
+              }}
+            >
+              <div className="text-right hidden sm:block">
                 <p className="font-medium text-gray-800">{profile?.full_name || 'Admin'}</p>
                 <p className="text-xs text-gray-500">{profile?.role || 'Administrator'}</p>
               </div>
+              <ChevronDown size={16} className="text-gray-400 ml-1 hidden sm:block self-center" />
               <div className="flex items-center gap-2 pl-4 relative">
                 <div 
                   className="relative group cursor-pointer p-1 rounded-2xl bg-gradient-to-br from-primary-blue to-primary-coral hover:shadow-lg transition-all"

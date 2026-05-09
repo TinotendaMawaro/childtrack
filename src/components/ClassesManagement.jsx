@@ -392,6 +392,7 @@ export default function ClassesScreen() {
    const [editingClassId, setEditingClassId] = useState(null)
    const [isEditing, setIsEditing] = useState(false)
    const [editError, setEditError] = useState('')
+   const [showEditModal, setShowEditModal] = useState(false)
 
    // Add Class Modal State
    const [showAddModal, setShowAddModal] = useState(false)

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle, Edit, Trash2 } from 'lucide-react'
+import { Search, ChevronDown, UserPlus, X, Phone, Mail, FileText, TrendingUp, DollarSign, Loader2, AlertCircle, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import { supabase } from '../lib/supabaseClient'
+import PermissionGuard, { PermissionButton, PermissionAlert } from './PermissionGuard'
+import { usePermissions } from '../hooks/usePermissions'
 
 // Staff Data (mock - kept for fallback)
 const staffData = [
@@ -95,36 +97,42 @@ function StaffDrawer({ staff, onClose }) {
       <div className="fixed top-0 right-0 h-full w-[420px] glass-card rounded-l-large z-50 overflow-y-auto animate-slide-in-right">
         <div className="sticky top-0 bg-white/70 backdrop-blur-glass p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-heading font-bold text-xl text-gray-800">Staff Details</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                openEditModal(staff)
-                onClose()
-              }}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue"
-              title="Edit Staff"
-            >
-              <Edit size={20} />
-            </button>
-            <button
-              onClick={() => {
-                if (confirm('Delete this staff member?')) {
-                  handleDeleteStaff(staff.id)
+            <div className="flex items-center gap-2">
+              <PermissionButton
+                resource="staff"
+                action="update"
+                scope="organization"
+                onClick={() => {
+                  openEditModal(staff)
                   onClose()
-                }
-              }}
-              className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600"
-              title="Delete Staff"
-            >
-              <Trash2 size={20} />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <X size={20} className="text-gray-600" />
-            </button>
-          </div>
+                }}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue"
+                title="Edit Staff"
+              >
+                <Edit size={20} />
+              </PermissionButton>
+              <PermissionButton
+                resource="staff"
+                action="delete"
+                scope="organization"
+                onClick={() => {
+                  if (confirm('Delete this staff member?')) {
+                    handleDeleteStaff(staff.id)
+                    onClose()
+                  }
+                }}
+                className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600"
+                title="Delete Staff"
+              >
+                <Trash2 size={20} />
+              </PermissionButton>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
         </div>
 
         <div className="p-5 space-y-6">
@@ -264,9 +272,13 @@ export default function StaffScreen() {
    // Add Staff Modal State
    const [showAddModal, setShowAddModal] = useState(false)
    const [isAdding, setIsAdding] = useState(false)
-   const [addError, setAddError] = useState('')
-   const [classOptions, setClassOptions] = useState([])
-  
+    const [addError, setAddError] = useState('')
+    const [classOptions, setClassOptions] = useState([])
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1)
+    const itemsPerPage = 12
+
   // Form state
   const initialFormState = {
     full_name: '',
@@ -284,30 +296,35 @@ export default function StaffScreen() {
      setIsLoading(true)
      setError(null)
 
-     try {
-       const [staffRes, profilesRes, classesRes] = await Promise.all([
-         supabase.from('staff').select('id, role_title, assigned_class, status, created_at'),
-         supabase.from('profiles').select('id, full_name, email, phone'),
-         supabase.from('classes').select('id, name')
-       ])
+      try {
+        const [staffRes, profilesRes, classesRes] = await Promise.allSettled([
+          supabase.from('staff').select('id, role_title, assigned_class, status, created_at'),
+          supabase.from('profiles').select('id, full_name, email, phone'),
+          supabase.from('classes').select('id, name')
+        ])
 
-       if (staffRes.error) throw staffRes.error
-       if (profilesRes.error) throw profilesRes.error
-       if (classesRes.error) throw classesRes.error
+        // Handle partial failures - staff data is critical, others are optional
+        if (staffRes.status === 'rejected') {
+          throw new Error(`Failed to load staff data: ${staffRes.reason?.message || staffRes.reason}`)
+        }
 
-       const profilesMap = (profilesRes.data || []).reduce((acc, p) => {
-         acc[p.id] = p
-         return acc
-       }, {})
+        const staffData = staffRes.value.data || []
+        const profilesData = profilesRes.status === 'fulfilled' ? profilesRes.value.data || [] : []
+        const classesData = classesRes.status === 'fulfilled' ? classesRes.value.data || [] : []
 
-       const classesMap = (classesRes.data || []).reduce((acc, c) => {
-         acc[c.id] = c.name
-         return acc
-       }, {})
+        const profilesMap = profilesData.reduce((acc, p) => {
+          acc[p.id] = p
+          return acc
+        }, {})
 
-       setClassOptions(classesRes.data || [])
+        const classesMap = classesData.reduce((acc, c) => {
+          acc[c.id] = c.name
+          return acc
+        }, {})
 
-       const transformedData = (staffRes.data || []).map(staff => {
+        setClassOptions(classesData)
+
+        const transformedData = staffData.map(staff => {
          const profile = profilesMap[staff.id] || {}
          const assignedClassName = staff.assigned_class ? (classesMap[staff.assigned_class] || 'Unknown Class') : 'Unassigned'
 
@@ -453,6 +470,17 @@ export default function StaffScreen() {
     const matchesClass = classFilter === 'all' || staff.assignedClass === classFilter
     return matchesSearch && matchesRole && matchesStatus && matchesClass
   })
+
+  // Pagination logic
+  const totalItems = filteredStaff.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedStaff = filteredStaff.slice(startIndex, startIndex + itemsPerPage)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, roleFilter, statusFilter, classFilter])
 
   // Handle adding new staff
   const handleAddStaff = async (e) => {
@@ -613,11 +641,11 @@ const handleInputChange = (e) => {
 
             {/* Role Filter */}
             <div className="relative">
-              <select 
+              <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
-                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+                className="pl-4 pr-10 py-2.5 w-full sm:w-48 rounded-xl bg-white/70 border border-gray-200
+                            focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
               >
                 {roles.map(r => (
                   <option key={r} value={r}>{r === 'all' ? 'All Roles' : r}</option>
@@ -628,11 +656,11 @@ const handleInputChange = (e) => {
 
             {/* Status Filter */}
             <div className="relative">
-              <select 
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="pl-4 pr-10 py-2.5 w-full sm:w-40 rounded-xl bg-white/70 border border-gray-200 
-                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+                className="pl-4 pr-10 py-2.5 w-full sm:w-48 rounded-xl bg-white/70 border border-gray-200
+                            focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
               >
                 {statuses.map(s => (
                   <option key={s} value={s}>{s === 'all' ? 'All Status' : s === 'active' ? 'Active' : 'On Leave'}</option>
@@ -643,11 +671,11 @@ const handleInputChange = (e) => {
 
             {/* Class Filter */}
             <div className="relative">
-              <select 
+              <select
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
-                className="pl-4 pr-10 py-2.5 w-full sm:w-44 rounded-xl bg-white/70 border border-gray-200 
-                           focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
+                className="pl-4 pr-10 py-2.5 w-full sm:w-52 rounded-xl bg-white/70 border border-gray-200
+                            focus:outline-none focus:ring-2 focus:ring-primary-blue/30 text-sm transition-all appearance-none cursor-pointer"
               >
                 {classes.map(c => (
                   <option key={c} value={c}>{c === 'all' ? 'All Classes' : c}</option>
@@ -658,7 +686,10 @@ const handleInputChange = (e) => {
           </div>
 
           {/* Add Staff Button */}
-          <button 
+          <PermissionButton
+            resource="staff"
+            action="create"
+            scope="organization"
             onClick={() => setShowAddModal(true)}
             className="btn-gradient-coral px-5 py-2.5 rounded-xl text-white font-medium shadow-lg text-sm flex items-center justify-center gap-2 whitespace-nowrap hover:shadow-xl transition-all"
             disabled={isLoading}
@@ -671,7 +702,7 @@ const handleInputChange = (e) => {
                 Add Staff
               </>
             )}
-          </button>
+          </PermissionButton>
         </div>
 
         {/* Content Area */}
@@ -707,17 +738,65 @@ const handleInputChange = (e) => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
-            {filteredStaff.map((staff, index) => (
-              <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
-                <StaffCard 
-                  staff={staff} 
-                  onClick={() => setSelectedStaff(staff)}
-                  isActive={staff.status === 'active'}
-                />
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 [&>*]:animate-fade-in">
+              {paginatedStaff.map((staff, index) => (
+                <div key={staff.id} style={{ animationDelay: `${index * 50}ms` }}>
+                  <StaffCard
+                    staff={staff}
+                    onClick={() => setSelectedStaff(staff)}
+                    isActive={staff.status === 'active'}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-8">
+                <div className="text-sm text-gray-500">
+                  Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems} staff members
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <div className="flex gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                      if (pageNum > totalPages) return null
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-3 py-1 rounded text-sm ${
+                            currentPage === pageNum
+                              ? 'bg-primary-blue text-white'
+                              : 'hover:bg-gray-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 
