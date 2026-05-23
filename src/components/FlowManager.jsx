@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import SplashScreen from '../components/SplashScreen'
+import SplashScreen from './SplashScreen'
 import Login from './Login'
 import FullScreenLoader from './ui/FullScreenLoader'
 import GuidedTour from './ui/GuidedTour'
 import { useAuth } from '../hooks/useAuth'
 import ProtectedRoute from './ProtectedRoute'
-import AdminDashboard from './AdminLayout'
+import AdminLayout from './AdminLayout'
 import StaffDashboard from './StaffDashboard'
+import DriverDashboard from './DriverDashboard'
+import LiveRouteScreen from './LiveRouteScreen'
 import MobileOnlyNotice from './MobileOnlyNotice'
 import TermsModal from './ui/TermsModal'
 
@@ -20,11 +22,8 @@ export default function FlowManager() {
   const [firstLogin, setFirstLogin] = useState(false)
 
   useEffect(() => {
-    // Check localStorage for terms
     const accepted = localStorage.getItem('terms-accepted') === 'true'
     setTermsAccepted(accepted)
-
-    // Check first login
     setFirstLogin(!localStorage.getItem('tour-completed'))
   }, [])
 
@@ -37,13 +36,10 @@ export default function FlowManager() {
         navigate('/splash', { replace: true })
       }
     } else if (!authLoading && profile) {
-      // Only redirect if we have a profile
-      // Terms check before dashboard
       if (!termsAccepted) {
         setShowTerms(true)
         return
       }
-      // Role redirect - navigate based on role directly
       console.log('[FlowManager] Redirecting with role:', profile.role)
       switch (profile.role) {
         case 'ADMIN':
@@ -53,6 +49,8 @@ export default function FlowManager() {
           navigate('/staff/dashboard', { replace: true })
           break
         case 'DRIVER':
+          navigate('/driver/dashboard', { replace: true })
+          break
         case 'PARENT':
           navigate('/mobile-only', { replace: true })
           break
@@ -66,12 +64,11 @@ export default function FlowManager() {
     localStorage.setItem('terms-accepted', 'true')
     setTermsAccepted(true)
     setShowTerms(false)
-    navigate('/splash') // or login
+    navigate('/splash')
   }
 
   const isAuthReady = isAuthenticated && profile && !authLoading
 
-  // Only show loader during initial auth check, not during role/profile loading after login
   if (authLoading) {
     return <FullScreenLoader message="Verifying authentication..." title="Authenticating" />
   }
@@ -79,10 +76,10 @@ export default function FlowManager() {
   if (showTerms && !termsAccepted) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-400 via-orange-300 to-rose-400">
-        <TermsModal 
+        <TermsModal
           isOpen={true}
           onAccept={handleTermsAccept}
-          onClose={() => {}} // Block close
+          onClose={() => {}}
         />
       </div>
     )
@@ -98,13 +95,23 @@ export default function FlowManager() {
           <>
             <Route path="/admin/*" element={
               <ProtectedRoute allowedRoles={['ADMIN']}>
-                <AdminDashboard />
+                <AdminLayout />
                 {firstLogin && <GuidedTour />}
               </ProtectedRoute>
             } />
             <Route path="/staff/*" element={
               <ProtectedRoute allowedRoles={['STAFF']}>
                 <StaffDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/driver/*" element={
+              <ProtectedRoute allowedRoles={['DRIVER']}>
+                <DriverDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/live-route" element={
+              <ProtectedRoute allowedRoles={['DRIVER']}>
+                <LiveRouteScreen />
               </ProtectedRoute>
             } />
           </>
@@ -117,4 +124,3 @@ export default function FlowManager() {
     </>
   )
 }
-

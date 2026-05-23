@@ -769,6 +769,8 @@ function TransportScreen() {
 
 // Main Dashboard Component
 function Dashboard() {
+  // Admin dashboard stats are loaded by AdminDashboard.jsx; Dashboard() here is a legacy stub
+  const stats = { childrenCount: 0, staffCount: 0, pendingPayments: 0 }
   const currentDate = new Date().toLocaleDateString('en-US', { 
     weekday: 'long', 
     year: 'numeric', 
@@ -793,36 +795,36 @@ function Dashboard() {
         <StatCard 
           icon={Baby} 
           label="Total Children" 
-          value={data?.childrenCount || 0} 
-          trend={data?.childrenTrend || '0%'} 
-          trendUp={data?.childrenTrendUp || false} 
+          value={stats.childrenCount} 
+          trend={stats.childrenTrend || '0%'} 
+          trendUp={stats.childrenTrendUp || false} 
           color="blue"
           delay={1}
         />
         <StatCard 
           icon={Users} 
           label="Staff Members" 
-          value={data?.staffCount || 0} 
-          trend={data?.staffTrend || '0%'} 
-          trendUp={data?.staffTrendUp || false} 
+          value={stats.staffCount} 
+          trend={stats.staffTrend || '0%'} 
+          trendUp={stats.staffTrendUp || false} 
           color="purple"
           delay={2}
         />
         <StatCard 
           icon={UserCheck} 
           label="Today Attendance" 
-          value={data?.attendanceToday || 0} 
-          trend={data?.attendanceTrend || '0%'} 
-          trendUp={data?.attendanceTrendUp || false} 
+          value={stats.attendanceToday || 0} 
+          trend={stats.attendanceTrend || '0%'} 
+          trendUp={stats.attendanceTrendUp || false} 
           color="green"
           delay={3}
         />
         <StatCard 
           icon={DollarSign} 
           label="Pending Payments" 
-          value={data?.pendingPayments || 0} 
-          trend={data?.paymentsTrend || '$0'} 
-          trendUp={data?.paymentsTrendUp || false} 
+          value={stats.pendingPayments} 
+          trend={stats.paymentsTrend || '$0'} 
+          trendUp={stats.paymentsTrendUp || false} 
           color="coral"
           delay={4}
         />

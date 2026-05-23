@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Supabase Database Password Helper
+# This script helps you get your database password from Supabase
+
+echo "🔑 Getting Your Supabase Database Password"
+echo "=========================================="
+echo ""
+echo "1. Open your browser and go to:"
+echo "   https://lzkhjmtfvksxobxdjytb.supabase.co"
+echo ""
+echo "2. Sign in to your Supabase account"
+echo ""
+echo "3. In the left sidebar, click 'Settings' (gear icon)"
+echo ""
+echo "4. Click 'Database' in the settings menu"
+echo ""
+echo "5. Scroll down to 'Connection string' section"
+echo ""
+echo "6. Look for the 'URI' field - it should look like:"
+echo "   postgresql://postgres:[PASSWORD]@db.lzkhjmtfvksxobxdjytb.supabase.co:5432/postgres"
+echo ""
+echo "7. The [PASSWORD] part is your database password"
+echo ""
+echo "8. Copy that full URI and update your .env file:"
+echo "   DATABASE_URL=postgresql://postgres:YOUR_ACTUAL_PASSWORD@db.lzkhjmtfvksxobxdjytb.supabase.co:5432/postgres"
+echo ""
+echo "⚠️  Important: Keep this password secure and never commit it to version control!"
+echo ""
+echo "Once you've updated the .env file, run:"
+echo "  ./quick-setup.sh"
+echo ""
+echo "=========================================="

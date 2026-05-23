@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:go_router/go_router.dart';
 import '../main.dart';
 
 class LiveRouteScreen extends StatefulWidget {
-  const LiveRouteScreen({super.key});
+  final String? routeName;
+  const LiveRouteScreen({super.key, this.routeName});
 
   @override
   State<LiveRouteScreen> createState() => _LiveRouteScreenState();
@@ -37,8 +39,8 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
 
   void _startLocationUpdates() {
     _timer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      if (!mounted) return;
       setState(() {
-        // Simulate updates
         onboardCount = (onboardCount + 1) % 10;
         final stops = ['Oak Street', 'Pine Street', 'Birch Road', 'School'];
         final index = stops.indexOf(currentStop);
@@ -52,6 +54,8 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final routeLabel = widget.routeName ?? 'Route';
+
     return Scaffold(
       body: Stack(
         children: [
@@ -64,13 +68,13 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
             polylines: {
               Polyline(
                 polylineId: const PolylineId('route'),
-                points: [
-                  const LatLng(37.42796133580664, -122.085749655962),
-                  const LatLng(37.432962, -122.088323),
-                  const LatLng(37.438963, -122.091323),
-                  const LatLng(37.444964, -122.094323),
+                points: const [
+                  LatLng(37.42796133580664, -122.085749655962),
+                  LatLng(37.432962, -122.088323),
+                  LatLng(37.438963, -122.091323),
+                  LatLng(37.444964, -122.094323),
                 ],
-                color: AppColors.blueGradientEnd,
+                color: AppColors.primaryBlue,
                 width: 5,
               ),
             },
@@ -78,24 +82,44 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
               Marker(
                 markerId: const MarkerId('school'),
                 position: const LatLng(37.444964, -122.094323),
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                icon:
+                    BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                 infoWindow: const InfoWindow(title: 'ChildTrack School'),
-              ),
-              Marker(
-                markerId: const MarkerId('student1'),
-                position: const LatLng(37.4300, -122.0860),
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-                infoWindow: const InfoWindow(title: 'Emma J.'),
-              ),
-              Marker(
-                markerId: const MarkerId('student2'),
-                position: const LatLng(37.4350, -122.0890),
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-                infoWindow: const InfoWindow(title: 'Noah W.'),
               ),
             },
           ),
-          // Bottom floating card
+          // ── Top bar ──────────────────────────────────────────────────────
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_back_rounded,
+                          color: AppColors.textPrimary),
+                    ),
+                    onPressed: () => context.go('/home'),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$routeLabel – Live',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ── Bottom floating card ─────────────────────────────────────────
           Positioned(
             bottom: 100,
             left: 20,
@@ -113,16 +137,26 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [Colors.orange.shade400, Colors.red.shade400]),
+                            gradient: LinearGradient(
+                                colors: [
+                                  Colors.orange.shade400,
+                                  Colors.red.shade400
+                                ]),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.location_pin, color: Colors.white, size: 20),
+                          child: const Icon(Icons.location_pin,
+                              color: Colors.white, size: 20),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(child: Text('Current Stop', style: TextStyle(fontWeight: FontWeight.w600))),
+                        const Expanded(
+                            child: Text('Current Stop',
+                                style:
+                                    TextStyle(fontWeight: FontWeight.w600))),
                       ],
                     ),
-                    Text(currentStop, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(currentStop,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -130,16 +164,23 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [AppColors.blueGradientStart, AppColors.blueGradientEnd]),
+                            gradient: const LinearGradient(
+                                colors: [AppColors.primaryBlue, AppColors.primaryCoral]),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                          child: const Icon(Icons.arrow_forward,
+                              color: Colors.white, size: 20),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(child: Text('Next Stop', style: TextStyle(fontWeight: FontWeight.w600))),
+                        const Expanded(
+                            child: Text('Next Stop',
+                                style:
+                                    TextStyle(fontWeight: FontWeight.w600))),
                       ],
                     ),
-                    Text(nextStop, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(nextStop,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -152,12 +193,16 @@ class _LiveRouteScreenState extends State<LiveRouteScreen> {
                           ],
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
                             color: Colors.green.shade400,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text('$onboardCount kids', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          child: Text('$onboardCount kids',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),

@@ -1,29 +1,69 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-// Custom hook for managing attendance data
+// Custom hook for managing attendance data with date support
 export function useAttendance() {
   const [attendanceData, setAttendanceData] = useState({})
   const [loading, setLoading] = useState(false)
 
-  // Load attendance data from localStorage (for offline support)
+  // Load saved attendance data from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('childtrack_attendance')
     if (saved) {
-      setAttendanceData(JSON.parse(saved))
+      try {
+        setAttendanceData(JSON.parse(saved))
+      } catch (e) {
+        console.error('Failed to parse saved attendance data:', e)
+      }
     }
   }, [])
 
-  // Save attendance data to localStorage (for offline support)
+  // Save attendance data to localStorage
   const saveAttendanceData = (data) => {
     setAttendanceData(data)
     localStorage.setItem('childtrack_attendance', JSON.stringify(data))
   }
 
+  // Load attendance for a specific date from Supabase
+  const loadAttendanceForDate = async (date) => {
+    try {
+      setLoading(true)
+      const { data: records, error } = await supabase
+        .from('attendance')
+        .select('child_id, class_id, date, status')
+        .eq('date', date)
+
+      if (error) throw error
+
+      const dataMap = {}
+      if (records) {
+        records.forEach(record => {
+          const key = `${record.date}_${record.class_id}_${record.child_id}`
+          dataMap[key] = {
+            status: record.status.toLowerCase(),
+            timestamp: new Date().toISOString(),
+            classId: record.class_id,
+            childId: record.child_id
+          }
+        })
+      }
+
+      // Merge with existing state (server data updates local)
+      setAttendanceData(prev => {
+        const merged = { ...prev, ...dataMap }
+        localStorage.setItem('childtrack_attendance', JSON.stringify(merged))
+        return merged
+      })
+    } catch (error) {
+      console.error('Failed to load attendance for date:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Mark attendance for a child (saves to both localStorage and database)
-  const markAttendance = async (classId, childId, status) => {
-    const today = new Date().toISOString().split('T')[0]
-    const key = `${today}_${classId}_${childId}`
+  const markAttendance = async (classId, childId, status, date = new Date().toISOString().split('T')[0]) => {
+    const key = `${date}_${classId}_${childId}`
 
     try {
       setLoading(true)
@@ -32,13 +72,13 @@ export function useAttendance() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Save to database
+      // Save to database (status stored as uppercase)
       const { error: dbError } = await supabase
         .from('attendance')
         .upsert({
           child_id: childId,
           class_id: classId,
-          date: today,
+          date,
           status: status.toUpperCase(),
           recorded_by: user.id
         }, {
@@ -47,14 +87,13 @@ export function useAttendance() {
 
       if (dbError) {
         console.error('Database save failed:', dbError)
-        // Continue with localStorage fallback
       }
 
-      // Update localStorage (always keep for offline support)
+      // Update localStorage (store in lowercase for consistency)
       const newData = {
         ...attendanceData,
         [key]: {
-          status,
+          status: status.toLowerCase(),
           timestamp: new Date().toISOString(),
           classId,
           childId
@@ -71,7 +110,7 @@ export function useAttendance() {
       const newData = {
         ...attendanceData,
         [key]: {
-          status,
+          status: status.toLowerCase(),
           timestamp: new Date().toISOString(),
           classId,
           childId
@@ -85,20 +124,23 @@ export function useAttendance() {
     }
   }
 
-  // Get today's attendance for a child
-  const getTodayAttendance = (classId, childId) => {
-    const today = new Date().toISOString().split('T')[0]
-    const key = `${today}_${classId}_${childId}`
+  // Get attendance for a child on a specific date (default today)
+  const getAttendance = (classId, childId, date = new Date().toISOString().split('T')[0]) => {
+    const key = `${date}_${classId}_${childId}`
     return attendanceData[key]?.status || 'pending'
   }
 
-  // Get attendance stats for a class
-  const getAttendanceStats = (classChildren, classId) => {
-    const present = classChildren.filter(child => getTodayAttendance(classId, child.id) === 'present').length
-    const absent = classChildren.filter(child => getTodayAttendance(classId, child.id) === 'absent').length
-    const late = classChildren.filter(child => getTodayAttendance(classId, child.id) === 'late').length
-    const total = classChildren.length
+  // Backwards compatibility: get today's attendance without date param
+  const getTodayAttendance = (classId, childId) => {
+    return getAttendance(classId, childId)
+  }
 
+  // Get attendance stats for a class on a specific date (default today)
+  const getAttendanceStats = (classChildren, classId, date = new Date().toISOString().split('T')[0]) => {
+    const present = classChildren.filter(child => getAttendance(classId, child.id, date) === 'present').length
+    const absent = classChildren.filter(child => getAttendance(classId, child.id, date) === 'absent').length
+    const late = classChildren.filter(child => getAttendance(classId, child.id, date) === 'late').length
+    const total = classChildren.length
     return { present, absent, late, total, marked: present + absent + late }
   }
 
@@ -189,8 +231,10 @@ export function useAttendance() {
     loading,
     markAttendance,
     getTodayAttendance,
+    getAttendance,
     getAttendanceStats,
     fetchAttendanceData,
-    getAttendanceSummary
+    getAttendanceSummary,
+    loadAttendanceForDate
   }
 }

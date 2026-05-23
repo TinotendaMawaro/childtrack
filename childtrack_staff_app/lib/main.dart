@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
+import 'screens/attendance_screen.dart';
+import 'screens/student_profile_screen.dart';
+import 'screens/daily_diary_screen.dart';
 
 const supabaseUrl = 'https://lzkhjmtfvksxobxdjytb.supabase.co';
 const supabaseKey = 'sb_publishable_SoJUUnnFLEWm88VkKXnxvg_MpP9JR7c';
@@ -113,7 +115,10 @@ class ChildTrackStaffApp extends StatelessWidget {
       routes: [
         GoRoute(
           path: '/login',
-          builder: (context, state) => const LoginScreen(),
+          builder: (context, state) => const SharedLoginScreen(
+            appTitle: 'ChildTrack Staff',
+            successRoute: '/staff',
+          ),
         ),
         GoRoute(
           path: '/staff',
@@ -122,191 +127,30 @@ class ChildTrackStaffApp extends StatelessWidget {
       ],
       redirect: (context, state) {
         final session = Supabase.instance.client.auth.currentSession;
-        if (session == null && state.location != '/login') {
+        if (session == null && state.uri.path != '/login') {
           return '/login';
         }
         return null;
       },
     );
 
-    return MaterialApp.router(
-      title: 'ChildTrack Staff',
-      debugShowCheckedModeBanner: false,
-      routerConfig: router,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryBlue),
-        scaffoldBackgroundColor: AppColors.softBackground,
-        textTheme: GoogleFonts.poppinsTextTheme(),
-      ),
-    );
-  }
-}
-
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  var _loading = false;
-  bool _termsAccepted = false;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _signIn() async {
-    setState(() => _loading = true);
-    try {
-      final response = await Supabase.instance.client.auth.signInWithPassword(
-        email: _emailController.text,
-        password: _passwordController.text,
-      );
-      if (mounted) {
-        context.go('/staff');
-      }
-    } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString()),
-          backgroundColor: Colors.red.shade400,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.primaryCoral, AppColors.primaryBlue],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [AppColors.primaryBlue, AppColors.primaryCoral],
-                          ),
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        padding: const EdgeInsets.all(4),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Icon(Icons.school_rounded, size: 40, color: AppColors.primaryBlue),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'ChildTrack Staff',
-                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Welcome back teacher!',
-                        style: TextStyle(fontSize: 18, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                GlassCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _emailController,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            prefixIcon: Icon(Icons.email_rounded),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock_rounded),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        CheckboxListTile(
-                          value: _termsAccepted,
-                          onChanged: (value) {
-                            setState(() {
-                              _termsAccepted = value ?? false;
-                            });
-                          },
-                          title: const Text('I agree to Terms & Conditions'),
-                          controlAffinity: ListTileControlAffinity.leading,
-                          activeColor: AppColors.mintGlow,
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                        ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: (_loading || !_termsAccepted) ? null : _signIn,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.mintGlow,
-                              foregroundColor: AppColors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              elevation: 8,
-                            ),
-                            child: _loading 
-                              ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(AppColors.white)),
-                                )
-                              : const Text('Login', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return ProviderScope(
+      child: MaterialApp.router(
+        title: 'ChildTrack Staff',
+        debugShowCheckedModeBanner: false,
+        routerConfig: router,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryBlue),
+          scaffoldBackgroundColor: AppColors.softBackground,
+          textTheme: GoogleFonts.poppinsTextTheme(),
         ),
       ),
     );
   }
 }
+
+
 
 class StaffHomeScreen extends StatefulWidget {
   const StaffHomeScreen({super.key});
@@ -407,17 +251,12 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
           const ProfileTab(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showPhotoUpload(context),
-        backgroundColor: AppColors.mintGlow,
-        child: const Icon(Icons.camera_alt_rounded, color: AppColors.white),
-      ),
       bottomNavigationBar: _buildBottomNav(),
       extendBody: true,
     );
   }
 
-  BottomNavigationBar _buildBottomNav() {
+  Widget _buildBottomNav() {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -492,86 +331,483 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
   }
 }
 
-class HomeTab extends StatelessWidget {
+class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
+
+  @override
+  State<HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
+  bool _isFabOpen = false;
+  late AnimationController _controller;
+  late Animation<double> _expandAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      reverseDuration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _expandAnimation = CurvedAnimation(
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInBack,
+      parent: _controller,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggleFab() {
+    if (_isFabOpen) {
+      _controller.reverse();
+    } else {
+      _controller.forward();
+    }
+    setState(() {
+      _isFabOpen = !_isFabOpen;
+    });
+  }
+
+  // Real data operations
+  Future<void> _markAttendance() async {
+    final staffId = Supabase.instance.client.auth.currentUser?.id;
+    if (staffId == null) {
+      _showSnackBar('Not authenticated');
+      return;
+    }
+
+    final response = await Supabase.instance.client
+        .from('staff')
+        .select('assigned_class')
+        .eq('id', staffId)
+        .maybeSingle();
+
+    if (response != null && response['assigned_class'] != null) {
+      // Navigate to attendance screen with class pre-selected
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AttendanceScreen(initialClassId: response['assigned_class']),
+          ),
+        );
+      }
+    } else {
+      _showSnackBar('No classes assigned to you yet.');
+    }
+  }
+
+  Future<void> _uploadPhoto() async {
+    final picker = ImagePicker();
+    final photos = await picker.pickMultiImage();
+    if (photos.isEmpty) return;
+
+    int uploadedCount = 0;
+    for (final photo in photos) {
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}-${photo.name}';
+      final error = await Supabase.instance.client.storage
+          .from('diary-photos')
+          .upload(fileName, await photo.readAsBytes());
+
+      if (error == null) uploadedCount++;
+    }
+    _showSnackBar('Uploaded $uploadedCount photo(s). Use them in your diary entry!');
+  }
+
+  Future<void> _addDiary() async {
+    // Navigate to Daily Diary screen
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const DailyDiaryScreen(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _messageParent() async {
+    final staffId = Supabase.instance.client.auth.currentUser?.id;
+    if (staffId == null) {
+      _showSnackBar('Not authenticated');
+      return;
+    }
+
+    // Get staff's assigned class
+    final staffResponse = await Supabase.instance.client
+        .from('staff')
+        .select('assigned_class')
+        .eq('id', staffId)
+        .maybeSingle();
+
+    if (staffResponse == null || staffResponse['assigned_class'] == null) {
+      _showSnackBar('No classes assigned to you yet.');
+      return;
+    }
+
+    // Get first child in class with parent contact
+    final childrenResponse = await Supabase.instance.client
+        .from('children')
+        .select('id, full_name, profiles!parent_id(id, full_name, phone, email)')
+        .eq('class_id', staffResponse['assigned_class'])
+        .eq('status', 'ACTIVE')
+        .limit(1);
+
+    if (childrenResponse.isNotEmpty && childrenResponse[0]['profiles'] != null) {
+      final child = childrenResponse[0];
+      final parent = child['profiles'];
+      
+      // Show dialog to send message
+      if (mounted) {
+        final controller = TextEditingController();
+        final result = await showDialog<String>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Message ${parent['full_name']} (Parent of ${child['full_name']})'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(hintText: 'Type your message'),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context, controller.text.trim()),
+                child: const Text('Send'),
+              ),
+            ],
+          ),
+        );
+
+        if (result != null && result.isNotEmpty) {
+          // Find or create conversation
+          var conv = await Supabase.instance.client
+              .from('conversations')
+              .select('id')
+              .eq('staff_id', staffId)
+              .eq('parent_id', parent['id'])
+              .eq('child_id', child['id'])
+              .maybeSingle();
+
+          String? conversationId;
+          if (conv != null) {
+            conversationId = conv['id'];
+          } else {
+            final newConv = await Supabase.instance.client
+                .from('conversations')
+                .insert({
+                  'staff_id': staffId,
+                  'parent_id': parent['id'],
+                  'child_id': child['id'],
+                })
+                .select('id')
+                .maybeSingle();
+            conversationId = newConv?['id'];
+          }
+
+          if (conversationId == null) {
+            _showSnackBar('Failed to create conversation');
+            return;
+          }
+
+          final error = await Supabase.instance.client.from('messages').insert({
+            'conversation_id': conversationId,
+            'sender_id': staffId,
+            'receiver_id': parent['id'],
+            'message': result,
+          });
+
+          if (error != null) {
+            _showSnackBar('Failed to send message: ${error.message}');
+          } else {
+            _showSnackBar('Message sent successfully!');
+          }
+        }
+      }
+    } else {
+      _showSnackBar('No children/parents found in your class.');
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Greeting
-            Row(
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [AppColors.primaryBlue, AppColors.primaryCoral]),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  padding: const EdgeInsets.all(2),
-                  child: Container(
-                    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.person_rounded, size: 28, color: AppColors.primaryBlue),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // Greeting
+                Row(
                   children: [
-                    Text('Good morning, Ms. Sarah!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                    Text('Sunbeam Class', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [AppColors.primaryBlue, AppColors.primaryCoral]),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.all(2),
+                      child: Container(
+                        decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(14)),
+                        child: const Icon(Icons.person_rounded, size: 28, color: AppColors.primaryBlue),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Good morning!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                        Text('Tap + to take action', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                      ],
+                    ),
                   ],
                 ),
+                const SizedBox(height: 32),
+                // Today Summary Card (remains)
+                GlassCard(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_month, size: 20, color: AppColors.primaryBlue),
+                          const SizedBox(width: 8),
+                          const Text('Today Summary', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          Column(
+                            children: [
+                              Text('Present', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                              SizedBox(height: 4),
+                              Text('12', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.accentGreen)),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              Text('Absent', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                              SizedBox(height: 4),
+                              Text('2', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red)),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              Text('Pending', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                              SizedBox(height: 4),
+                              Text('3', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.amber)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Additional content can go here
               ],
             ),
-            const SizedBox(height: 32),
-            // Main Cards Grid
-            GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildCard(Icons.check_circle_rounded, 'Mark Attendance', Colors.green.shade400, () {}),
-                _buildCard(Icons.camera_alt_rounded, 'Upload Photos', AppColors.mintGlow, () {}),
-                _buildCard(Icons.book_rounded, 'Update Diary', AppColors.primaryCoral, () {}),
-                _buildCard(Icons.message_rounded, 'Send Message', AppColors.primaryBlue, () {}),
-                _buildCard(Icons.schedule_rounded, "Today's Schedule", Colors.purple.shade400, () {}),
-              ],
-            ),
-          ],
-        ),
+          ),
+
+          // FAB Menu
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: _buildFabMenu(),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCard(IconData icon, String title, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: GlassCard(
-        glow: true,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(16),
+  Widget _buildFabMenu() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Radial action buttons
+        if (_isFabOpen) ...[
+          // Backdrop overlay
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _toggleFab,
+              child: Container(
+                color: Colors.black.withOpacity(0.1),
               ),
-              child: Icon(icon, size: 28, color: color),
             ),
-            const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-          ],
+          ),
+
+          // Buttons (order matters for z-index)
+          _buildFabButton(
+            icon: Icons.check_circle_rounded,
+            label: 'Attendance',
+            color: Colors.green,
+            onTap: () {
+              _markAttendance();
+              _toggleFab();
+            },
+            delay: 1,
+          ),
+          _buildFabButton(
+            icon: Icons.camera_alt_rounded,
+            label: 'Upload',
+            color: AppColors.primaryBlue,
+            onTap: () {
+              _uploadPhoto();
+              _toggleFab();
+            },
+            delay: 2,
+          ),
+          _buildFabButton(
+            icon: Icons.book_rounded,
+            label: 'Diary',
+            color: AppColors.primaryCoral,
+            onTap: () {
+              _addDiary();
+              _toggleFab();
+            },
+            delay: 3,
+          ),
+          _buildFabButton(
+            icon: Icons.message_rounded,
+            label: 'Message',
+            color: AppColors.accentPink,
+            onTap: () {
+              _messageParent();
+              _toggleFab();
+            },
+            delay: 4,
+          ),
+        ],
+
+        // Main FAB with pulse glow
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset.zero,
+              child: FloatingActionButton(
+                onPressed: _toggleFab,
+                backgroundColor: AppColors.mintGlow,
+                elevation: _isFabOpen ? 12 : 8,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Pulse rings when open
+                    if (_isFabOpen)
+                      ...List.generate(2, (i) {
+                        return AnimatedBuilder(
+                          animation: _controller..repeat(reverse: true),
+                          builder: (context, child) {
+                            return IgnorePointer(
+                              child: Container(
+                                width: 60 + (_controller.value * 20),
+                                height: 60 + (_controller.value * 20),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.mintGlow.withOpacity(0.3 * _controller.value),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }),
+                    // Plus icon with rotation
+                    Transform.rotate(
+                      angle: _controller.value * 0.785, // 45 degrees
+                      child: const Icon(Icons.add, size: 28, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildFabButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+    required int delay,
+  }) {
+    // Calculate radial position (semi-circle above FAB)
+    // Order: delay 1=top, 2=top-right, 3=top-left, 4=right
+    final positions = {
+      1: const Offset(0, -120),   // top
+      2: const Offset(90, -90),   // top-right
+      3: const Offset(-90, -90),  // top-left
+      4: const Offset(120, 0),    // right
+    };
+    
+    final target = positions[delay]!;
+    
+    return AnimatedBuilder(
+      animation: _expandAnimation,
+      builder: (context, child) {
+        return Positioned(
+          bottom: 80,
+          right: 0,
+          child: Transform.translate(
+            offset: target * _expandAnimation.value,
+            child: Opacity(
+              opacity: _expandAnimation.value,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Label
+                  GlassCard(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  ),
+                  // Button
+                  GestureDetector(
+                    onTap: onTap,
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [AppColors.mintGlow, Color(0xFF6EE7B7)]), // default, will override
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withOpacity(0.5),
+                            blurRadius: 16,
+                            spreadRadius: 3,
+                          ),
+                        ],
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 24),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -582,7 +818,7 @@ class ClassesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AttendanceScreen();
+    return AttendanceScreen();
   }
 }
 

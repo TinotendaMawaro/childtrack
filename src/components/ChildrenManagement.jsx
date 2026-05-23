@@ -3,12 +3,13 @@ import {
   Search, ChevronDown, UserPlus, X, Heart, AlertTriangle,
   Users, Phone, Mail, Car, GraduationCap, Edit, Trash2, RotateCcw, Archive,
   DollarSign, Calendar, History, ToggleLeft, ToggleRight, TrendingUp, TrendingDown,
-  Shield, FileText, ChevronLeft, ChevronRight
+  Shield, FileText, ChevronLeft, ChevronRight, MessageSquare, Plus
 } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import ConfirmationModal from './ConfirmationModal'
 import StatusAuditTrail from './StatusAuditTrail'
 import AttendanceManagement from './AttendanceManagement'
+import { useAuth } from '../hooks/useAuth'
 
 // Hook to fetch financial summary for a child
 function useChildFinancialSummary(childId) {
@@ -200,26 +201,69 @@ function ChildCard({ child, onClick, isDeactivated = false }) {
   )
 }
 
-// Child Detail Drawer
+// Child Detail Drawer (Enhanced Student Profile Screen)
 function ChildDrawer({ child, onClose, onEdit, onDeactivate, onReactivate, onArchive, activeTab }) {
+  const { session } = useAuth()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [attendanceHistory, setAttendanceHistory] = useState([])
+  const [behaviorNotes, setBehaviorNotes] = useState([])
+  const [loadingAttendance, setLoadingAttendance] = useState(false)
+  const [loadingNotes, setLoadingNotes] = useState(false)
+  const [addingNote, setAddingNote] = useState(false)
 
   const age = child.dob ? new Date().getFullYear() - new Date(child.dob).getFullYear() : 'N/A'
   const health = child.health_status || 'Good'
   const allergies = child.allergies || []
   const parents = child.profiles ? [child.profiles] : []
-  const transport = null
 
-  // Use financial summary hook
-  const { financialData, loading: financialLoading } = useChildFinancialSummary(child.id)
+  // Fetch attendance history and behavior notes
+  useEffect(() => {
+    if (!child) return
 
-  // Use status history hook
-  const { statusHistory, loading: historyLoading } = useChildStatusHistory(child.id)
+    const fetchData = async () => {
+      // Attendance history (last 30 records)
+      setLoadingAttendance(true)
+      try {
+        const { data: attData } = await supabase
+          .from('attendance')
+          .select('id, date, status')
+          .eq('child_id', child.id)
+          .order('date', { ascending: false })
+          .limit(30)
+        setAttendanceHistory(attData || [])
+      } catch (err) {
+        console.error('Error fetching attendance:', err)
+      } finally {
+        setLoadingAttendance(false)
+      }
 
-  // Handle status toggle
+      // Behavior notes (latest 10)
+      setLoadingNotes(true)
+      try {
+        const { data: notesData } = await supabase
+          .from('child_notes')
+          .select(`
+            id, note, created_at,
+            staff:profiles!staff_id(full_name)
+          `)
+          .eq('child_id', child.id)
+          .eq('note_type', 'behavior')
+          .order('created_at', { ascending: false })
+          .limit(10)
+        setBehaviorNotes(notesData || [])
+      } catch (err) {
+        console.error('Error fetching notes:', err)
+      } finally {
+        setLoadingNotes(false)
+      }
+    }
+
+    fetchData()
+  }, [child?.id])
+
+  // Status toggle handler
   const handleStatusToggle = async () => {
     if (isTogglingStatus) return
-
     setIsTogglingStatus(true)
     try {
       if (child.status === 'ACTIVE') {
@@ -227,108 +271,210 @@ function ChildDrawer({ child, onClose, onEdit, onDeactivate, onReactivate, onArc
       } else if (child.status === 'INACTIVE') {
         await onReactivate(child.id)
       }
-    } catch (error) {
-      console.error('Error toggling status:', error)
+    } catch (err) {
+      console.error('Error toggling status:', err)
     } finally {
       setIsTogglingStatus(false)
     }
   }
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount)
+  // Call parent
+  const handleCallParent = () => {
+    if (parents.length > 0 && parents[0].phone) {
+      window.location.href = `tel:${parents[0].phone}`
+    } else {
+      alert('No phone number available for parent')
+    }
+  }
+
+  // Send message to parent (through conversations/messages)
+  const handleSendMessage = async () => {
+    if (parents.length === 0) {
+      alert('No parent contact available')
+      return
+    }
+    const parent = parents[0]
+    const message = prompt('Enter your message:')
+    if (!message?.trim()) return
+
+    // Find existing conversation or create new
+    let { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('staff_id', session?.user?.id)
+      .eq('parent_id', parent.id)
+      .eq('child_id', child.id)
+      .maybeSingle()
+
+    let conversationId
+    if (conv) {
+      conversationId = conv.id
+    } else {
+      const { data: newConv } = await supabase
+        .from('conversations')
+        .insert({
+          staff_id: session.user.id,
+          parent_id: parent.id,
+          child_id: child.id
+        })
+        .select('id')
+        .single()
+      conversationId = newConv?.id
+      if (!conversationId) {
+        alert('Failed to create conversation')
+        return
+      }
+    }
+
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: session.user.id,
+        receiver_id: parent.id,
+        message: message.trim()
+      })
+
+    if (error) {
+      console.error('Error sending message:', error)
+      alert('Failed to send message')
+    } else {
+      alert('Message sent!')
+    }
+  }
+
+  // Add behavior note
+  const handleAddNote = async () => {
+    const note = prompt('Add behavior note:')
+    if (!note?.trim()) return
+    setAddingNote(true)
+    const { error } = await supabase.from('child_notes').insert({
+      child_id: child.id,
+      staff_id: session.user.id,
+      note_type: 'behavior',
+      note: note.trim(),
+      is_private: false
+    })
+    setAddingNote(false)
+    if (error) {
+      console.error('Error adding note:', error)
+      alert('Failed to add note')
+    } else {
+      // Refresh notes list
+      const { data: notesData } = await supabase
+        .from('child_notes')
+        .select(`
+          id, note, created_at,
+          staff:profiles!staff_id(full_name)
+        `)
+        .eq('child_id', child.id)
+        .eq('note_type', 'behavior')
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setBehaviorNotes(notesData || [])
+    }
+  }
+
+  // Helper functions
+  const getHealthColor = (status) => {
+    switch ((status || '').toLowerCase()) {
+      case 'excellent':
+      case 'good':
+        return 'text-accent-green'
+      case 'fair':
+        return 'text-amber-600'
+      case 'poor':
+        return 'text-red-600'
+      default:
+        return 'text-gray-600'
+    }
+  }
+
+  const getAttendanceColor = (status) => {
+    switch ((status || '').toLowerCase()) {
+      case 'present':
+        return 'bg-accent-green/10 text-accent-green'
+      case 'absent':
+        return 'bg-red-100 text-red-600'
+      case 'late':
+        return 'bg-accent-yellow/10 text-amber-600'
+      case 'excused':
+        return 'bg-blue-100 text-blue-600'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
   }
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
+    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
   }
+
+  const formatNoteDate = (dateString) => {
+    if (!dateString) return ''
+    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Compute today's attendance from history
+  const today = new Date().toISOString().split('T')[0]
+  const todayRecord = attendanceHistory.find(a => a.date === today)
+  const todayStatus = todayRecord?.status
 
   return (
     <>
-      <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 lg:backdrop-blur-none"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 lg:backdrop-blur-none" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-11/12 max-w-sm sm:max-w-md glass-card shadow-2xl z-50 transform transition-transform animate-slide-in-right overflow-hidden">
         <style jsx>{`
           .drawer-scroll {
             scrollbar-width: thin;
             scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
           }
-          .drawer-scroll::-webkit-scrollbar {
-            width: 6px;
-          }
-          .drawer-scroll::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          .drawer-scroll::-webkit-scrollbar-thumb {
-            background-color: rgba(156, 163, 175, 0.5);
-            border-radius: 3px;
-          }
-          .drawer-scroll::-webkit-scrollbar-thumb:hover {
-            background-color: rgba(156, 163, 175, 0.7);
-          }
+          .drawer-scroll::-webkit-scrollbar { width: 6px; }
+          .drawer-scroll::-webkit-scrollbar-track { background: transparent; }
+          .drawer-scroll::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 3px; }
+          .drawer-scroll::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.7); }
         `}</style>
-         <div className="sticky top-0 p-6 border-b bg-white/80 backdrop-blur-xl z-10 flex items-center justify-between">
-           <h2 className="font-bold text-2xl text-gray-800">Child Profile</h2>
-            <div className="flex items-center gap-2">
-              {child.status === 'ACTIVE' && (
-                <>
-                  <button
-                    onClick={onEdit}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue"
-                    title="Edit Child"
-                  >
-                    <Edit size={20} />
-                  </button>
-                  <button
-                    onClick={onDeactivate}
-                    className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600"
-                    title="Deactivate Child"
-                  >
-                    <Trash2 size={20} />
-                  </button>
-                </>
-              )}
-              {child.status === 'INACTIVE' && (
-                <>
-                  <button
-                    onClick={onReactivate}
-                    className="p-2 rounded-lg hover:bg-green-100 transition-colors text-green-600"
-                    title="Reactivate Child"
-                  >
-                    <RotateCcw size={20} />
-                  </button>
-                  <button
-                    onClick={onArchive}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
-                    title="Archive Permanently"
-                  >
-                    <Archive size={20} />
-                  </button>
-                </>
-              )}
-              {child.status === 'ARCHIVED' && (
-                <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">Archived - Read Only</span>
-              )}
-              <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-xl transition-colors">
-                <X size={20} className="text-gray-600" />
-              </button>
-            </div>
-         </div>
 
-        <div className="overflow-y-auto max-h-[calc(100vh-80px)] drawer-scroll">
+        {/* Header */}
+        <div className="sticky top-0 p-4 border-b bg-white/80 backdrop-blur-xl z-10 flex items-center justify-between">
+          <h2 className="font-bold text-xl text-gray-800">Student Profile</h2>
+          <div className="flex items-center gap-2">
+            {child.status === 'ACTIVE' && (
+              <>
+                <button onClick={onEdit} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-primary-blue" title="Edit Child">
+                  <Edit size={20} />
+                </button>
+                <button onClick={onDeactivate} className="p-2 rounded-lg hover:bg-red-100 transition-colors text-red-600" title="Deactivate Child">
+                  <Trash2 size={20} />
+                </button>
+              </>
+            )}
+            {child.status === 'INACTIVE' && (
+              <>
+                <button onClick={onReactivate} className="p-2 rounded-lg hover:bg-green-100 transition-colors text-green-600" title="Reactivate Child">
+                  <RotateCcw size={20} />
+                </button>
+                <button onClick={onArchive} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600" title="Archive Permanently">
+                  <Archive size={20} />
+                </button>
+              </>
+            )}
+            {child.status === 'ARCHIVED' && (
+              <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">Archived - Read Only</span>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-xl transition-colors">
+              <X size={20} className="text-gray-600" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 drawer-scroll">
+
           {/* Profile Header */}
-          <div className="flex flex-col items-center mb-8 pb-6 border-b px-6 pt-6">
-            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-primary-coral to-orange-400 p-[4px] mb-4">
-              <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral p-[3px] mb-3">
+              <div className="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
                 {child.photo_url?.startsWith('http') ? (
                   <img src={child.photo_url} alt={child.full_name} className="w-full h-full object-cover rounded-full" />
                 ) : (
@@ -336,199 +482,184 @@ function ChildDrawer({ child, onClose, onEdit, onDeactivate, onReactivate, onArc
                 )}
               </div>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-1">{child.full_name}</h3>
-            <p className="text-gray-600 mb-4">{age} years • {child.classes ? `${child.classes.curriculum || 'Cambridge'} - ${child.classes.name}` : 'No class'}</p>
-
-            {/* Status Toggle */}
-            <div className="flex items-center gap-4 mb-4">
-              <span className="text-sm text-gray-500">Status:</span>
-              <button
-                onClick={handleStatusToggle}
-                disabled={isTogglingStatus || child.status === 'ARCHIVED'}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-                  child.status === 'ACTIVE'
-                    ? 'bg-accent-green/10 text-accent-green border-2 border-accent-green/20'
-                    : 'bg-amber-100 text-amber-700 border-2 border-amber-200'
-                } ${isTogglingStatus ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md'}`}
-              >
-                {isTogglingStatus ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : child.status === 'ACTIVE' ? (
-                  <ToggleRight size={20} />
-                ) : (
-                  <ToggleLeft size={20} />
-                )}
-                <span className="font-medium">
-                  {child.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+            <h3 className="text-xl font-bold text-gray-800">{child.full_name}</h3>
+            <p className="text-sm text-gray-600">{age} years • {child.classes ? `${child.classes.curriculum || 'Cambridge'} - ${child.classes.name}` : 'Unassigned'}</p>
+            {child.status === 'ACTIVE' && todayStatus && (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-xs text-gray-500">Today:</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getAttendanceColor(todayStatus)}`}>
+                  {todayStatus === 'present' ? '● Present' : todayStatus === 'absent' ? '○ Absent' : todayStatus === 'late' ? '◐ Late' : todayStatus}
                 </span>
-              </button>
-            </div>
-
-            {/* Today's Attendance Status */}
-            <div className="flex items-center gap-4 mb-4">
-              <span className="text-sm text-gray-500">Today:</span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                getAttendanceStatus() === 'present'
-                  ? 'bg-accent-green/10 text-accent-green'
-                  : getAttendanceStatus() === 'absent'
-                  ? 'bg-red-100 text-red-600'
-                  : 'bg-accent-yellow/10 text-amber-600'
-              }`}>
-                {getAttendanceStatus() === 'present' ? '● Present' : getAttendanceStatus() === 'absent' ? '○ Absent' : '◐ Late'}
-              </span>
-            </div>
-          </div>
-
-          {/* Financial Summary Cards */}
-          <div className="px-6 mb-6">
-            <h4 className="font-semibold text-lg text-gray-800 mb-4 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-primary-blue" />
-              Financial Summary
-            </h4>
-            {financialLoading ? (
-              <div className="flex justify-center py-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-blue"></div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="glass-card-inner p-4 rounded-xl text-center">
-                  <div className="flex items-center justify-center gap-1 mb-2">
-                    <TrendingUp className="w-4 h-4 text-accent-green" />
-                    <span className="text-sm text-gray-500">Total Paid</span>
-                  </div>
-                  <p className="text-xl font-bold text-accent-green">{formatCurrency(financialData.totalPaid)}</p>
-                </div>
-                <div className="glass-card-inner p-4 rounded-xl text-center">
-                  <div className="flex items-center justify-center gap-1 mb-2">
-                    <TrendingDown className="w-4 h-4 text-red-500" />
-                    <span className="text-sm text-gray-500">Total Owed</span>
-                  </div>
-                  <p className="text-xl font-bold text-red-600">{formatCurrency(financialData.totalOwed)}</p>
-                </div>
               </div>
             )}
           </div>
 
-          {/* Enrollment/Withdrawal Dates */}
-          <div className="glass-card-inner mx-6 p-6 rounded-2xl mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Calendar className="w-6 h-6 text-primary-blue" />
-              <h4 className="font-semibold text-lg">Enrollment History</h4>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Enrolled</span>
-                <p className="font-medium text-gray-800">{formatDate(child.enrollment_date || child.created_at)}</p>
-              </div>
-              <div>
-                <span className="text-gray-500">Withdrawn</span>
-                <p className="font-medium text-gray-800">{formatDate(child.withdrawal_date)}</p>
-              </div>
-            </div>
+          {/* Action Buttons */}
+          <div className="grid grid-cols-3 gap-3">
+            <button onClick={handleCallParent} className="flex flex-col items-center gap-1 p-3 rounded-xl bg-primary-blue/10 hover:bg-primary-blue/20 transition-colors">
+              <Phone size={20} className="text-primary-blue" />
+              <span className="text-xs font-medium text-primary-blue">Call</span>
+            </button>
+            <button onClick={handleSendMessage} className="flex flex-col items-center gap-1 p-3 rounded-xl bg-primary-coral/10 hover:bg-primary-coral/20 transition-colors">
+              <MessageSquare size={20} className="text-primary-coral" />
+              <span className="text-xs font-medium text-primary-coral">Message</span>
+            </button>
+            <button onClick={handleAddNote} disabled={addingNote} className="flex flex-col items-center gap-1 p-3 rounded-xl bg-accent-green/10 hover:bg-accent-green/20 transition-colors disabled:opacity-50">
+              {addingNote ? (
+                <div className="w-5 h-5 border-2 border-accent-green border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Plus size={20} className="text-accent-green" />
+              )}
+              <span className="text-xs font-medium text-accent-green">Add Note</span>
+            </button>
           </div>
 
-          {/* Activity/Status History */}
-          <div className="glass-card-inner mx-6 p-6 rounded-2xl mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <History className="w-6 h-6 text-accent-purple" />
-              <h4 className="font-semibold text-lg">Status History</h4>
-            </div>
-            {historyLoading ? (
-              <div className="flex justify-center py-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-blue"></div>
+          {/* Attendance History */}
+          <div className="glass-card-inner p-4 rounded-2xl">
+            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary-blue" />
+              Attendance History
+            </h4>
+            {loadingAttendance ? (
+              <div className="flex justify-center py-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-blue"></div>
               </div>
-            ) : statusHistory.length > 0 ? (
-              <div className="space-y-3 max-h-48 overflow-y-auto">
-                {statusHistory.map((entry, index) => (
-                  <div key={entry.id || index} className="flex items-start gap-3 p-3 rounded-lg bg-white/50">
-                    <div className={`w-2 h-2 rounded-full mt-2 ${
-                      entry.new_status === 'ACTIVE' ? 'bg-accent-green' :
-                      entry.new_status === 'INACTIVE' ? 'bg-amber-500' : 'bg-gray-500'
-                    }`} />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-800">
-                        Status changed to <span className="font-semibold">{entry.new_status}</span>
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {formatDate(entry.changed_at)} • {entry.changed_by_profile?.full_name || 'System'}
-                      </p>
-                      {entry.reason && (
-                        <p className="text-xs text-gray-400 mt-1">Reason: {entry.reason}</p>
-                      )}
-                    </div>
+            ) : attendanceHistory.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {attendanceHistory.map((record) => (
+                  <div key={record.id} className="flex items-center justify-between p-2 rounded-lg bg-white/50">
+                    <span className="text-sm text-gray-700">{formatDate(record.date)}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${getAttendanceColor(record.status)}`}>
+                      {record.status}
+                    </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500 italic">No status changes recorded</p>
+              <p className="text-sm text-gray-500 text-center py-2">No attendance records</p>
             )}
           </div>
 
-          {/* Health Information */}
-          <div className="glass-card-inner mx-6 p-6 rounded-2xl mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Heart className="w-6 h-6 text-accent-pink" />
-              <h4 className="font-semibold text-lg">Health Information</h4>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Health Status</span>
-                <p className="font-medium text-gray-800">{health}</p>
+          {/* Health Notes */}
+          <div className="glass-card-inner p-4 rounded-2xl">
+            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Heart className="w-5 h-5 text-accent-pink" />
+              Health Notes
+            </h4>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Health Status</span>
+                <span className={`text-sm font-semibold ${getHealthColor(health)}`}>{health}</span>
               </div>
-              <div>
-                <span className="text-gray-500">Allergies</span>
-                <p className="font-medium">{allergies.length ? allergies.join(', ') : 'None'}</p>
+              <div className="flex items-start justify-between">
+                <span className="text-sm text-gray-500">Allergies</span>
+                <div className="text-right">
+                  {allergies.length > 0 ? (
+                    allergies.map((allergy, i) => (
+                      <div key={i} className="flex items-center gap-1 text-sm font-medium text-red-500 mb-1">
+                        <AlertTriangle size={12} />
+                        {allergy}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-sm text-accent-green">None</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Parent Contacts */}
-          <div className="glass-card-inner mx-6 p-6 rounded-2xl mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Users className="w-6 h-6 text-primary-blue" />
-              <h4 className="font-semibold text-lg">Parent Contacts</h4>
-            </div>
+          <div className="glass-card-inner p-4 rounded-2xl">
+            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary-blue" />
+              Parent Contacts
+            </h4>
             <div className="space-y-3">
               {parents.map((parent, i) => (
-                <div key={i} className="p-4 rounded-xl bg-white/50 border-l-4 border-primary-blue">
+                <div key={i} className="p-3 rounded-xl bg-white/50 border-l-4 border-primary-blue">
                   <div className="flex justify-between items-start mb-2">
-                    <h5 className="font-semibold">{parent.full_name}</h5>
+                    <h5 className="font-semibold text-gray-800">{parent.full_name}</h5>
                     <span className="text-xs bg-primary-blue/10 text-primary-blue px-2 py-1 rounded-full">Parent</span>
                   </div>
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4" /><span>{parent.phone || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4" /><span>{parent.email || 'N/A'}</span>
-                    </div>
+                  <div className="space-y-1 text-sm">
+                    <a href={`tel:${parent.phone}`} className="flex items-center gap-2 text-gray-600 hover:text-primary-blue">
+                      <Phone size={14} />
+                      <span>{parent.phone || 'No phone'}</span>
+                    </a>
+                    <a href={`mailto:${parent.email}`} className="flex items-center gap-2 text-gray-600 hover:text-primary-blue">
+                      <Mail size={14} />
+                      <span>{parent.email || 'No email'}</span>
+                    </a>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Transport */}
-          <div className="glass-card-inner mx-6 p-6 rounded-2xl mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Car className="w-6 h-6 text-accent-purple" />
-              <h4 className="font-semibold text-lg">Transport</h4>
-            </div>
-            {transport ? (
-              <div className="text-sm text-gray-600">
-                <div className="flex justify-between mb-2">
-                  <span>Route</span>
-                  <span className="font-medium">{transport.route}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Status</span>
-                  <span className="font-medium text-accent-green">Active</span>
-                </div>
+          {/* Behavior Notes */}
+          <div className="glass-card-inner p-4 rounded-2xl">
+            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-accent-purple" />
+              Behavior Notes
+            </h4>
+            {loadingNotes ? (
+              <div className="flex justify-center py-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-blue"></div>
+              </div>
+            ) : behaviorNotes.length > 0 ? (
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {behaviorNotes.map((note) => (
+                  <div key={note.id} className="p-3 rounded-lg bg-white/50 border-l-4 border-accent-purple">
+                    <p className="text-sm text-gray-800 mb-2">{note.note}</p>
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>{note.staff?.full_name || 'Staff'}</span>
+                      <span>{formatNoteDate(note.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500 italic">No transport assigned</p>
+              <p className="text-sm text-gray-500 text-center py-2">No behavior notes recorded</p>
             )}
           </div>
+
+          {/* Progress Summary */}
+          <div className="glass-card-inner p-4 rounded-2xl">
+            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-accent-green" />
+              Progress Summary
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="text-center p-3 rounded-xl bg-white/50">
+                <p className="text-xs text-gray-500 mb-1">Performance</p>
+                <p className={`text-lg font-bold ${
+                  child.performance === 'Excellent' ? 'text-accent-green' :
+                  child.performance === 'Good' ? 'text-primary-blue' :
+                  child.performance === 'Poor' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {child.performance || 'N/A'}
+                </p>
+              </div>
+              <div className="text-center p-3 rounded-xl bg-white/50">
+                <p className="text-xs text-gray-500 mb-1">Attendance</p>
+                <p className="text-lg font-bold text-gray-800">{child.attendance_average || 0}%</p>
+              </div>
+            </div>
+            {child.awards && Array.isArray(child.awards) && child.awards.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-gray-500 mb-1">Awards</p>
+                <div className="flex flex-wrap gap-1">
+                  {child.awards.map((award, i) => (
+                    <span key={i} className="text-xs px-2 py-1 rounded-full bg-accent-yellow/10 text-amber-600">
+                      {award}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
     </>

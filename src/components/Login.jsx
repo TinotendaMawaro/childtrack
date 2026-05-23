@@ -2,15 +2,17 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabaseClient'
 import TermsModal from './ui/TermsModal'
-import { 
-  Mail, 
-  Lock, 
-  Loader2, 
-  Eye, 
-  EyeOff, 
-  Check, 
-  Users, 
-  ShieldCheck 
+import {
+  Mail,
+  Lock,
+  Loader2,
+  Eye,
+  EyeOff,
+  Check,
+  Users,
+  ShieldCheck,
+  AlertCircle,
+  X
 } from 'lucide-react'
 
 export default function Login({ onSuccess }) {
@@ -23,12 +25,25 @@ export default function Login({ onSuccess }) {
   const [showTermsModal, setShowTermsModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [toast, setToast] = useState(null)
+
   const { signIn } = useAuth()
+
+  const showToast = (message, type = 'error') => {
+    setToast({ id: Date.now(), message, type, visible: true })
+    setTimeout(() => setToast(null), 4000)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setError('')
+
+    // Validate Terms & Conditions
+    if (!acceptTerms) {
+      showToast('You must accept the Terms & Conditions to continue')
+      setLoading(false)
+      return
+    }
 
     try {
       console.log('[Login] Attempting sign in for:', email)
@@ -38,13 +53,38 @@ export default function Login({ onSuccess }) {
       console.log('[Login] onSuccess completed')
     } catch (err) {
       console.error('[Login] Sign in error:', err.message)
-      setError(err.message || 'Login failed. Please check your credentials.')
+      showToast(err.message || 'Login failed. Please check your credentials.')
       setLoading(false)
     }
   }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-blue-400 via-orange-300 to-rose-400 pt-16 pb-20">
+
+      {/* Toast Notification */}
+      {toast && toast.visible && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-red-500/85 backdrop-blur-sm border border-red-200/50 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-3 animate-fade-in">
+          <AlertCircle size={20} />
+          <span className="font-medium">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 hover:text-red-100 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-white/90 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center shadow-xl">
+              <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-full h-full object-cover rounded-2xl" />
+            </div>
+            <div className="w-12 h-12 border-4 border-primary-blue/30 border-t-primary-blue rounded-full animate-spin"></div>
+            <p className="text-gray-700 font-medium">Authenticating...</p>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-lg xl:max-w-xl glass-card rounded-3xl p-8 shadow-2xl animate-fade-scale mx-4 sm:mx-6 lg:mx-auto">
         
         {/* Top Illustration */}
@@ -142,14 +182,14 @@ export default function Login({ onSuccess }) {
           </div>
 
           {/* Login Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full font-semibold py-4 px-6 rounded-2xl shadow-lg transform transition-all duration-300 flex items-center justify-center gap-2 text-lg group ${
-              loading
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none'
-                : 'bg-gradient-to-r from-primary-blue to-primary-coral text-white hover:shadow-[0_0_25px_rgba(74,144,226,0.4)] hover:-translate-y-1 active:scale-[0.98] shadow-xl group-hover:animate-pulse-glow-mint'
-            }`}>
+            <button
+              type="submit"
+              disabled={loading}
+              className={`w-full font-semibold py-4 px-6 rounded-2xl shadow-lg transform transition-all duration-300 flex items-center justify-center gap-2 text-lg group ${
+                loading
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none'
+                  : 'bg-gradient-to-r from-primary-coral to-primary-blue text-white hover:shadow-[0_0_25px_rgba(74,144,226,0.4)] hover:-translate-y-1 active:scale-[0.98] shadow-xl group-hover:animate-pulse-glow-mint'
+              }`}>
             {loading ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin" />

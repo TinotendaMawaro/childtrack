@@ -9,6 +9,8 @@ import { useAttendance } from '../hooks/useAttendance'
 import { useStaffDashboardData } from '../hooks/useStaffDashboardData'
 import { useAuth } from '../hooks/useAuth'
 import Attendance from './Attendance'
+import ClassManagement from './ClassManagement'
+import FABMenu from './FABMenu'
 
 export default function StaffDashboard() {
   const [activeTab, setActiveTab] = useState('home')
@@ -35,7 +37,13 @@ export default function StaffDashboard() {
   const { staffProfile, classes, children, recentActivities, announcements, loading, error } = useStaffDashboardData()
   const { signOut, uploadProfilePic } = useAuth()
 
-  // Initialize notifications from announcements
+  const getTimeOfDay = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) return 'Morning'
+    if (hour < 17) return 'Afternoon'
+    return 'Evening'
+  }
+
   const [notificationList, setNotificationList] = useState(() =>
     announcements.map((announcement, index) => ({
       id: announcement.id || index + 1,
@@ -48,7 +56,6 @@ export default function StaffDashboard() {
     }))
   )
 
-  // Update notifications when announcements change
   useEffect(() => {
     setNotificationList(announcements.map((announcement, index) => ({
       id: announcement.id || index + 1,
@@ -61,13 +68,6 @@ export default function StaffDashboard() {
     })))
   }, [announcements])
 
-  // Close all modals when switching tabs
-  useEffect(() => {
-    // No action needed, just ensuring modals are controlled
-    // This effect runs when activeTab changes
-  }, [activeTab])
-
-  // Close all modals and screens when switching tabs to prevent stuck overlays
   useEffect(() => {
     setShowAttendanceModal(false)
     setShowPhotoUpload(false)
@@ -77,7 +77,6 @@ export default function StaffDashboard() {
     setShowAttendance(false)
   }, [activeTab])
 
-  // Close modals on Escape key
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
@@ -92,19 +91,6 @@ export default function StaffDashboard() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [])
 
-  // Close all modals and screens on unmount (cleanup)
-  useEffect(() => {
-    return () => {
-      setShowAttendanceModal(false)
-      setShowPhotoUpload(false)
-      setShowDiaryModal(false)
-      setShowMessageModal(false)
-      setShowScheduleModal(false)
-      setShowAttendance(false)
-    }
-  }, [])
-
-  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
@@ -114,12 +100,10 @@ export default function StaffDashboard() {
         setShowProfileMenu(false)
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Notification functions
   const markAsRead = (id) => {
     setNotificationList(prev =>
       prev.map(notif => notif.id === id ? { ...notif, read: true } : notif)
@@ -138,15 +122,12 @@ export default function StaffDashboard() {
     )
   }
 
-  // Get active notifications (not dismissed)
   const activeNotifications = notificationList.filter(notif => !notif.dismissed)
   const unreadCount = activeNotifications.filter(notif => !notif.read).length
 
-  // Transform classes data for attendance tracking
   const classesData = classes.map((cls, index) => {
     let classChildren = children.filter(child => child.class_id === cls.id)
 
-    // Fallback: If no children are assigned to this specific class
     if (classChildren.length === 0 && children.length > 0) {
       const hasAssignments = children.some(child => child.class_id)
       if (!hasAssignments) {
@@ -167,18 +148,12 @@ export default function StaffDashboard() {
         name: child.full_name,
         age: child.dob ? new Date().getFullYear() - new Date(child.dob).getFullYear() : 'N/A',
         photo: child.photo_url || '👶',
-        status: 'pending'
+        status: 'pending',
+        parent: child.profiles
       }))
     }
   })
 
-  const stats = [
-    { label: 'Today Attendance', value: `${classesData.reduce((acc, cls) => acc + getAttendanceStats(cls.children, cls.id).present, 0)}/${classesData.reduce((acc, cls) => acc + cls.children.length, 0)}`, icon: CheckCircle, color: 'green' },
-    { label: 'My Classes', value: classesData.length.toString(), icon: GraduationCap, color: 'blue' },
-    { label: 'Children Assigned', value: classesData.reduce((acc, cls) => acc + cls.children.length, 0).toString(), icon: Baby, color: 'purple' }
-  ]
-
-  // Handle profile picture upload
   const handleImageClick = (e) => {
     e.stopPropagation()
     fileInputRef.current?.click()
@@ -188,9 +163,7 @@ export default function StaffDashboard() {
     const file = e.target.files[0]
     if (!file) return
 
-    // Validate image
     if (!file.type.startsWith('image/')) {
-      // Show error in UI instead of alert
       setNotificationList(prev => [{
         id: Date.now(),
         title: 'Upload Failed',
@@ -203,7 +176,7 @@ export default function StaffDashboard() {
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) { // 5MB
+    if (file.size > 5 * 1024 * 1024) {
       setNotificationList(prev => [{
         id: Date.now(),
         title: 'Upload Failed',
@@ -219,7 +192,6 @@ export default function StaffDashboard() {
     setUploading(true)
     try {
       await uploadProfilePic(file)
-      // Show success notification
       setNotificationList(prev => [{
         id: Date.now(),
         title: 'Profile Updated',
@@ -229,7 +201,6 @@ export default function StaffDashboard() {
         read: false,
         dismissed: false
       }, ...prev])
-      // Reset input
       e.target.value = ''
     } catch (error) {
       console.error('Upload failed:', error)
@@ -251,7 +222,6 @@ export default function StaffDashboard() {
     await signOut()
   }
 
-  // Photo upload handlers
   const handlePhotoUpload = () => {
     photoInputRef.current?.click()
   }
@@ -260,13 +230,12 @@ export default function StaffDashboard() {
     const files = Array.from(e.target.files)
     if (files.length === 0) return
 
-    // Validate files
     const validFiles = files.filter(file => {
       if (!file.type.startsWith('image/')) {
         alert(`${file.name} is not an image file`)
         return false
       }
-      if (file.size > 10 * 1024 * 1024) { // 10MB
+      if (file.size > 10 * 1024 * 1024) {
         alert(`${file.name} is too large (max 10MB)`)
         return false
       }
@@ -275,42 +244,56 @@ export default function StaffDashboard() {
 
     if (validFiles.length === 0) return
 
-    // In a real app, these would be uploaded to cloud storage
-    // For demo, we'll just show them as uploaded
-    const newPhotos = validFiles.map(file => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      url: URL.createObjectURL(file),
-      date: new Date().toISOString(),
-      classId: selectedClass?.id || classesData[0]?.id
-    }))
+    setUploading(true)
+    const newPhotos = []
+
+    for (const file of validFiles) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `diary/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+
+      const { error } = await supabase.storage
+        .from('diary-photos')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (error) {
+        console.error('Upload error:', error)
+        alert(`Failed to upload ${file.name}`)
+        continue
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from('diary-photos').getPublicUrl(fileName)
+
+      newPhotos.push({
+        id: Date.now() + Math.random(),
+        name: file.name,
+        url: publicUrl,
+        date: new Date().toISOString(),
+        classId: selectedClass?.id || classes[0]?.id || null
+      })
+    }
 
     setUploadedPhotos(prev => [...prev, ...newPhotos])
-
-    // Save to localStorage
-    const existingPhotos = JSON.parse(localStorage.getItem('childtrack_photos') || '[]')
-    const updatedPhotos = [...newPhotos, ...existingPhotos]
-    localStorage.setItem('childtrack_photos', JSON.stringify(updatedPhotos))
-
+    setUploading(false)
     setShowPhotoUpload(false)
-
-    // Reset input
     e.target.value = ''
 
-    // Show success notification
-    setNotificationList(prev => [{
-      id: Date.now(),
-      title: 'Photos Uploaded',
-      message: `Successfully uploaded ${validFiles.length} photo${validFiles.length > 1 ? 's' : ''}`,
-      type: 'info',
-      date: new Date().toISOString(),
-      read: false,
-      dismissed: false
-    }, ...prev])
+    if (newPhotos.length > 0) {
+      setNotificationList(prev => [{
+        id: Date.now(),
+        title: 'Photos Uploaded',
+        message: `Successfully uploaded ${newPhotos.length} photo${newPhotos.length > 1 ? 's' : ''}`,
+        type: 'info',
+        date: new Date().toISOString(),
+        read: false,
+        dismissed: false
+      }, ...prev])
+    }
   }
 
-  // Diary handlers
-  const handleSaveDiary = () => {
+  const handleSaveDiary = async () => {
     if (!diaryEntry.trim()) {
       setNotificationList(prev => [{
         id: Date.now(),
@@ -324,19 +307,41 @@ export default function StaffDashboard() {
       return
     }
 
+    const staffId = staffProfile?.id
+    if (!staffId) { alert('Not authenticated'); return }
+
+    const classId = classes.length > 0 ? classes[0].id : null
+    if (!classId) { alert('No class assigned'); return }
+
+    const today = new Date().toISOString().split('T')[0]
+
+    const { data: existing } = await supabase
+      .from('daily_diary')
+      .select('id')
+      .eq('class_id', classId)
+      .eq('date', today)
+      .maybeSingle()
+
     const diaryData = {
-      id: Date.now(),
-      content: diaryEntry,
-      date: new Date().toISOString(),
-      staffId: staffProfile?.id,
-      classId: selectedClass?.id || classesData[0]?.id,
-      className: selectedClass?.name || classesData[0]?.name || 'General'
+      class_id: classId,
+      date: today,
+      notes: diaryEntry.trim(),
+      created_by: staffId,
+      photos: uploadedPhotos.map(p => p.url),
     }
 
-    // Save to localStorage
-    const existingDiaries = JSON.parse(localStorage.getItem('childtrack_diaries') || '[]')
-    const updatedDiaries = [diaryData, ...existingDiaries]
-    localStorage.setItem('childtrack_diaries', JSON.stringify(updatedDiaries))
+    if (existing) {
+      await supabase.from('daily_diary').update({
+        notes: diaryEntry.trim(),
+        photos: diaryData.photos,
+      }).eq('id', existing.id)
+    } else {
+      await supabase.from('daily_diary').insert(diaryData)
+    }
+
+    setDiaryEntry('')
+    setUploadedPhotos([])
+    setShowDiaryModal(false)
 
     setNotificationList(prev => [{
       id: Date.now(),
@@ -347,13 +352,9 @@ export default function StaffDashboard() {
       read: false,
       dismissed: false
     }, ...prev])
-
-    setDiaryEntry('')
-    setShowDiaryModal(false)
   }
 
-  // Message handlers
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageText.trim() || !selectedParent) {
       setNotificationList(prev => [{
         id: Date.now(),
@@ -367,112 +368,99 @@ export default function StaffDashboard() {
       return
     }
 
-    const messageData = {
-      id: Date.now(),
-      content: messageText,
-      recipientId: selectedParent.id,
-      recipientName: selectedParent.full_name,
-      senderId: staffProfile?.id,
-      senderName: staffProfile?.full_name || 'Staff',
-      date: new Date().toISOString(),
-      type: 'staff_to_parent',
-      read: false
+    const staffId = staffProfile?.id
+    if (!staffId) { alert('Not authenticated'); return }
+
+    const parentChild = children.find(child => child.profiles?.id === selectedParent.id)
+    if (!parentChild) {
+      setNotificationList(prev => [{
+        id: Date.now(),
+        title: 'Message Failed',
+        message: 'No child found for selected parent in your classes',
+        type: 'warning',
+        date: new Date().toISOString(),
+        read: false,
+        dismissed: false
+      }, ...prev])
+      return
     }
 
-    // Save to localStorage
-    const existingMessages = JSON.parse(localStorage.getItem('childtrack_messages') || '[]')
-    const updatedMessages = [messageData, ...existingMessages]
-    localStorage.setItem('childtrack_messages', JSON.stringify(updatedMessages))
+    let { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('staff_id', staffId)
+      .eq('parent_id', selectedParent.id)
+      .eq('child_id', parentChild.id)
+      .maybeSingle()
 
-    setNotificationList(prev => [{
-      id: Date.now(),
-      title: 'Message Sent',
-      message: `Message sent to ${selectedParent.full_name}`,
-      type: 'info',
-      date: new Date().toISOString(),
-      read: false,
-      dismissed: false
-    }, ...prev])
+    let conversationId
+    if (conv) {
+      conversationId = conv.id
+    } else {
+      const { data: newConv } = await supabase
+        .from('conversations')
+        .insert({
+          staff_id: staffId,
+          parent_id: selectedParent.id,
+          child_id: parentChild.id,
+        })
+        .select('id')
+        .single()
+      conversationId = newConv?.id
+      if (!conversationId) {
+        setNotificationList(prev => [{
+          id: Date.now(),
+          title: 'Message Failed',
+          message: 'Could not create conversation',
+          type: 'warning',
+          date: new Date().toISOString(),
+          read: false,
+          dismissed: false
+        }, ...prev])
+        return
+      }
+    }
 
-    setMessageText('')
-    setSelectedParent(null)
-    setShowMessageModal(false)
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: staffId,
+        receiver_id: selectedParent.id,
+        message: messageText.trim(),
+      })
+
+    if (error) {
+      console.error('Message error:', error)
+      setNotificationList(prev => [{
+        id: Date.now(),
+        title: 'Message Failed',
+        message: error.message,
+        type: 'warning',
+        date: new Date().toISOString(),
+        read: false,
+        dismissed: false
+      }, ...prev])
+    } else {
+      setNotificationList(prev => [{
+        id: Date.now(),
+        title: 'Message Sent',
+        message: `Message sent to ${selectedParent.full_name}`,
+        type: 'info',
+        date: new Date().toISOString(),
+        read: false,
+        dismissed: false
+      }, ...prev])
+      setMessageText('')
+      setSelectedParent(null)
+      setShowMessageModal(false)
+    }
   }
 
-  // Schedule handler
   const handleViewSchedule = () => {
     setShowScheduleModal(true)
   }
 
-  // Main cards data with full functionality
-  const mainCards = [
-    {
-      id: 'attendance',
-      title: 'Mark Attendance',
-      description: `${classesData.length} class${classesData.length > 1 ? 'es' : ''} • ${classesData.reduce((acc, cls) => acc + cls.children.length, 0)} children`,
-      icon: CheckCircle,
-      color: 'from-green-400 to-green-500',
-      action: () => {
-        if (classesData.length > 0) {
-          setShowAttendance(true)
-        } else {
-          setNotificationList(prev => [{
-            id: Date.now(),
-            title: 'No Classes',
-            message: 'No classes assigned to you yet.',
-            type: 'warning',
-            date: new Date().toISOString(),
-            read: false,
-            dismissed: false
-          }, ...prev])
-        }
-      }
-    },
-    {
-      id: 'photos',
-      title: 'Upload Daily Photos',
-      description: (() => {
-        const today = new Date().toISOString().split('T')[0]
-        const allPhotos = JSON.parse(localStorage.getItem('childtrack_photos') || '[]')
-        const todayPhotos = allPhotos.filter(photo => photo.date.startsWith(today)).length
-        return `${todayPhotos} photo${todayPhotos > 1 ? 's' : ''} uploaded today`
-      })(),
-      icon: Camera,
-      color: 'from-blue-400 to-blue-500',
-      action: () => setShowPhotoUpload(true)
-    },
-    {
-      id: 'diary',
-      title: 'Update Diary',
-      description: (() => {
-        const today = new Date().toISOString().split('T')[0]
-        const allDiaries = JSON.parse(localStorage.getItem('childtrack_diaries') || '[]')
-        const todayDiaries = allDiaries.filter(diary => diary.date.startsWith(today)).length
-        return todayDiaries > 0 ? `${todayDiaries} entr${todayDiaries > 1 ? 'ies' : 'y'} today` : 'Record daily activities and notes'
-      })(),
-      icon: BookOpen,
-      color: 'from-purple-400 to-purple-500',
-      action: () => setShowDiaryModal(true)
-    },
-    {
-      id: 'messages',
-      title: 'Send Message to Parent',
-      description: `${children.length} parent${children.length > 1 ? 's' : ''} available`,
-      icon: MessageSquare,
-      color: 'from-pink-400 to-pink-500',
-      action: () => setShowMessageModal(true)
-    },
-    {
-      id: 'schedule',
-      title: 'Today\'s Schedule',
-      description: `${classesData.length} class${classesData.length > 1 ? 'es' : ''} scheduled`,
-      icon: Calendar,
-      color: 'from-orange-400 to-orange-500',
-      action: () => handleViewSchedule()
-    }
-  ]
-
-  // Bottom navigation items
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'classes', label: 'Classes', icon: GraduationCap },
@@ -522,15 +510,12 @@ export default function StaffDashboard() {
       {/* Top Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-glass border-b border-gray-200/50 px-4 py-3">
         <div className="flex items-center justify-between">
-          {/* Logo */}
           <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl btn-gradient flex items-center justify-center shadow-lg">
-            <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-6 h-6 sm:w-8 sm:h-8 object-cover rounded-xl" />
+            <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-6 h-6 sm:w-8 sm:h-8 object-cover rounded-2xl" />
           </div>
 
-          {/* Title */}
           <h1 className="text-base sm:text-lg font-heading font-bold text-gray-800">ChildTrack</h1>
 
-          {/* Right side - Notifications & Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Notifications */}
             <div className="relative" ref={notificationRef}>
@@ -540,7 +525,7 @@ export default function StaffDashboard() {
               >
                 <Bell size={18} className="text-gray-600 sm:w-5 sm:h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-accent-pink text-white text-xs rounded-full flex items-center justify-center font-medium">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent-pink text-white text-xs rounded-full flex items-center justify-center font-medium animate-pulse-glow shadow-lg shadow-accent-pink/50">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
@@ -660,7 +645,6 @@ export default function StaffDashboard() {
                 </div>
               </button>
 
-              {/* Profile Menu */}
               {showProfileMenu && (
                 <div className="absolute right-0 top-full mt-2 w-48 glass-card rounded-xl shadow-xl overflow-hidden animate-fade-in z-50">
                   <div className="p-2">
@@ -692,7 +676,6 @@ export default function StaffDashboard() {
                 </div>
               )}
 
-              {/* Hidden file input */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -707,110 +690,266 @@ export default function StaffDashboard() {
 
       {/* Main Content */}
       <main className="px-4 py-6">
-        {/* Render different content based on active tab */}
+
+        {/* ── HOME TAB ─────────────────────────────────────────── */}
         {activeTab === 'home' && (
-          <>
+          <div className="space-y-6">
+
             {/* Greeting */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">
-                Good morning, {staffProfile?.full_name?.split(' ')[0] || 'Staff'}! 🌅
-              </h2>
-              <p className="text-gray-600">Here's what's happening today</p>
-            </div>
+            <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-800">
+                    Good {getTimeOfDay()}, {staffProfile?.full_name?.split(' ')[0] || 'Teacher'} 👩‍🏫
+                  </h2>
+                  <p className="text-gray-600 text-sm sm:text-base mt-1">
+                    {new Date().toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {stats.map((stat, index) => {
-                const Icon = stat.icon
-                return (
-                  <div key={index} className="glass-card p-3 sm:p-4 text-center rounded-2xl">
-                    <div className={`w-8 h-8 sm:w-10 sm:h-10 mx-auto mb-2 rounded-xl bg-gradient-to-br from-${stat.color}-400 to-${stat.color}-500 flex items-center justify-center`}>
-                      <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                    </div>
-                    <p className="text-sm sm:text-lg font-bold text-gray-800 mb-1">{stat.value}</p>
-                    <p className="text-xs text-gray-600 leading-tight">{stat.label}</p>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Main Action Cards */}
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
-              {mainCards.map((card) => {
-                const Icon = card.icon
-                return (
+                {/* In-hero notifications button */}
+                <div className="relative">
                   <button
-                    key={card.id}
-                    onClick={card.action}
-                    className="glass-card p-4 sm:p-5 rounded-2xl text-left hover:shadow-xl transition-all group"
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className="relative p-3 rounded-2xl bg-white/50 hover:bg-white/80 transition-all hover:-translate-y-1 hover:shadow-lg group"
                   >
-                    <div className={`w-10 h-10 sm:w-12 sm:h-12 mb-3 rounded-xl bg-gradient-to-br ${card.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                      <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                    </div>
-                    <h3 className="font-semibold text-gray-800 mb-1 text-sm">{card.title}</h3>
-                    <p className="text-xs text-gray-600 leading-tight">{card.description}</p>
+                    <Bell className="w-6 h-6 text-gray-600 group-hover:text-primary-blue transition-colors" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent-pink text-white text-xs rounded-full flex items-center justify-center font-medium animate-pulse-glow shadow-lg shadow-accent-pink/50">
+                        {unreadCount}
+                      </span>
+                    )}
                   </button>
-                )
-              })}
+                </div>
+              </div>
             </div>
 
-            {/* Quick Actions Bar */}
-            <div className="glass-card p-4 rounded-2xl mb-6">
-              <h3 className="font-semibold text-gray-800 mb-3 text-sm">Quick Actions</h3>
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                <button
-                  onClick={() => {
-                    if (classesData.length > 0) {
+            {/* Today's Class Card */}
+            {classesData.length > 0 && (
+              <div className="glass-card rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden animate-slide-up"
+                   style={{ animationDelay: '100ms' }}>
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <GraduationCap className="w-5 h-5 text-primary-blue" />
+                    <h3 className="font-bold text-gray-800">Today's Class</h3>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="text-xl font-bold text-gray-800">{classesData[0].name}</h4>
+                      <p className="text-sm text-gray-600">
+                        {classesData[0].children.length} children enrolled
+                      </p>
+                    </div>
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-blue/20 to-primary-coral/20 flex items-center justify-center">
+                      <Baby className="w-7 h-7 text-primary-blue" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Attendance Marked</span>
+                      <span className="font-semibold text-gray-800">
+                        {getAttendanceStats(classesData[0].children, classesData[0].id).marked} / {classesData[0].children.length}
+                      </span>
+                    </div>
+                    <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-accent-green to-accent-green/70 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${classesData[0].children.length > 0
+                            ? (getAttendanceStats(classesData[0].children, classesData[0].id).marked / classesData[0].children.length) * 100
+                            : 0}%`
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-4 text-xs pt-1">
+                      <span className="flex items-center gap-1 text-accent-green">
+                        <CheckCircle className="w-3 h-3" />
+                        {getAttendanceStats(classesData[0].children, classesData[0].id).present} present
+                      </span>
+                      <span className="flex items-center gap-1 text-red-500">
+                        <X className="w-3 h-3" />
+                        {getAttendanceStats(classesData[0].children, classesData[0].id).absent} absent
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={() => {
+                      setSelectedClass(classesData[0])
                       setShowAttendance(true)
-                    } else {
-                      setNotificationList(prev => [{
-                        id: Date.now(),
-                        title: 'No Classes',
-                        message: 'No classes assigned to you yet.',
-                        type: 'warning',
-                        date: new Date().toISOString(),
-                        read: false,
-                        dismissed: false
-                      }, ...prev])
-                    }
-                  }}
-                  className="flex flex-col items-center gap-2 p-3 bg-primary-blue/10 rounded-xl hover:bg-primary-blue/20 transition-colors flex-shrink-0"
-                >
-                  <CheckCircle className="w-6 h-6 text-primary-blue" />
-                  <span className="text-xs text-gray-700">Attendance</span>
-                </button>
-                <button
-                  onClick={() => setShowPhotoUpload(true)}
-                  className="flex flex-col items-center gap-2 p-3 bg-blue-500/10 rounded-xl hover:bg-blue-500/20 transition-colors flex-shrink-0"
-                >
-                  <Camera className="w-6 h-6 text-blue-500" />
-                  <span className="text-xs text-gray-700">Photos</span>
-                </button>
-                <button
-                  onClick={() => setShowDiaryModal(true)}
-                  className="flex flex-col items-center gap-2 p-3 bg-purple-500/10 rounded-xl hover:bg-purple-500/20 transition-colors flex-shrink-0"
-                >
-                  <BookOpen className="w-6 h-6 text-purple-500" />
-                  <span className="text-xs text-gray-700">Diary</span>
-                </button>
-                <button
-                  onClick={() => setShowMessageModal(true)}
-                  className="flex flex-col items-center gap-2 p-3 bg-pink-500/10 rounded-xl hover:bg-pink-500/20 transition-colors flex-shrink-0"
-                >
-                  <MessageSquare className="w-6 h-6 text-pink-500" />
-                  <span className="text-xs text-gray-700">Messages</span>
-                </button>
+                    }}
+                    className="w-full py-3 bg-gradient-to-r from-primary-blue to-primary-blue/90 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-primary-blue/30 transition-all flex items-center justify-center gap-2 animate-pulse-glow"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    Mark Attendance
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Action Cards */}
+            <div className="grid grid-cols-2 gap-3 animate-slide-up" style={{ animationDelay: '200ms' }}>
+              <button
+                onClick={() => {
+                  if (classesData.length > 0) {
+                    setSelectedClass(classesData[0])
+                    setShowAttendance(true)
+                  } else {
+                    setNotificationList(prev => [{
+                      id: Date.now(),
+                      title: 'No Classes',
+                      message: 'No classes assigned to you yet.',
+                      type: 'warning',
+                      date: new Date().toISOString(),
+                      read: false,
+                      dismissed: false
+                    }, ...prev])
+                  }
+                }}
+                className="glass-card p-6 rounded-2xl hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 mb-3 rounded-2xl bg-gradient-to-br from-accent-green to-emerald-400 flex items-center justify-center shadow-lg">
+                  <CheckCircle className="w-7 h-7 text-white" />
+                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">Mark Attendance</h4>
+                <p className="text-xs text-gray-500 mt-1">Take attendance</p>
+              </button>
+
+              <button
+                onClick={() => setShowPhotoUpload(true)}
+                className="glass-card p-6 rounded-2xl hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 mb-3 rounded-2xl bg-gradient-to-br from-primary-blue to-blue-400 flex items-center justify-center shadow-lg">
+                  <Camera className="w-7 h-7 text-white" />
+                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">Upload Photos</h4>
+                <p className="text-xs text-gray-500 mt-1">Add to diary</p>
+              </button>
+
+              <button
+                onClick={() => setShowDiaryModal(true)}
+                className="glass-card p-6 rounded-2xl hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 mb-3 rounded-2xl bg-gradient-to-br from-accent-purple to-violet-400 flex items-center justify-center shadow-lg">
+                  <BookOpen className="w-7 h-7 text-white" />
+                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">Add Diary Entry</h4>
+                <p className="text-xs text-gray-500 mt-1">Record activity</p>
+              </button>
+
+              <button
+                onClick={() => setShowMessageModal(true)}
+                className="glass-card p-6 rounded-2xl hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 mb-3 rounded-2xl bg-gradient-to-br from-primary-coral to-orange-400 flex items-center justify-center shadow-lg">
+                  <MessageCircle className="w-7 h-7 text-white" />
+                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">Message Parent</h4>
+                <p className="text-xs text-gray-500 mt-1">Send message</p>
+              </button>
+            </div>
+
+            {/* FAB Menu */}
+            <FABMenu
+              onMarkAttendance={() => {
+                if (classesData.length > 0) {
+                  setShowAttendance(true)
+                } else {
+                  setNotificationList(prev => [{
+                    id: Date.now(),
+                    title: 'No Classes',
+                    message: 'No classes assigned to you yet.',
+                    type: 'warning',
+                    date: new Date().toISOString(),
+                    read: false,
+                    dismissed: false
+                  }, ...prev])
+                }
+              }}
+              onUploadPhoto={() => setShowPhotoUpload(true)}
+              onAddDiary={() => setShowDiaryModal(true)}
+              onMessageParent={() => setShowMessageModal(true)}
+            />
+
+            {/* Today Summary Card */}
+            <div className="glass-card rounded-2xl shadow-lg p-5 animate-slide-up"
+                 style={{ animationDelay: '300ms' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Calendar className="w-5 h-5 text-primary-blue" />
+                <h3 className="font-bold text-gray-800">Today Summary</h3>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 mx-auto mb-2 rounded-2xl bg-accent-green/10 flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-accent-green" />
+                  </div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {classesData.reduce((acc, cls) => acc + getAttendanceStats(cls.children, cls.id).present, 0)}
+                  </p>
+                  <p className="text-xs text-gray-600">Present</p>
+                </div>
+
+                <div className="text-center">
+                  <div className="w-12 h-12 mx-auto mb-2 rounded-2xl bg-red-500/10 flex items-center justify-center">
+                    <X className="w-6 h-6 text-red-500" />
+                  </div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {classesData.reduce((acc, cls) => acc + getAttendanceStats(cls.children, cls.id).absent, 0)}
+                  </p>
+                  <p className="text-xs text-gray-600">Absent</p>
+                </div>
+
+                <div className="text-center">
+                  <div className="w-12 h-12 mx-auto mb-2 rounded-2xl bg-amber-500/10 flex items-center justify-center">
+                    <Clock className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <p className="text-2xl font-bold text-gray-800">{uploadedPhotos.length}</p>
+                  <p className="text-xs text-gray-600">Pending</p>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
+                  <span>Overall Completion</span>
+                  <span className="font-medium">
+                    {(() => {
+                      const total = classesData.reduce((acc, cls) => acc + cls.children.length, 0)
+                      const present = classesData.reduce((acc, cls) => acc + getAttendanceStats(cls.children, cls.id).present, 0)
+                      return total > 0 ? Math.round((present / total) * 100) : 0
+                    })()}%
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-accent-green to-emerald-400 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${(() => {
+                        const total = classesData.reduce((acc, cls) => acc + cls.children.length, 0)
+                        const present = classesData.reduce((acc, cls) => acc + getAttendanceStats(cls.children, cls.id).present, 0)
+                        return total > 0 ? (present / total) * 100 : 0
+                      })()}%`
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Class Assignment Notice */}
             {(() => {
               const hasRealAssignments = children.some(child => child.class_id)
-              const totalAssigned = classesData.reduce((acc, cls) => acc + cls.children.length, 0)
-
               if (classes.length === 0) {
                 return (
-                  <div className="glass-card p-4 rounded-2xl border-l-4 border-blue-400 bg-blue-50/50">
+                  <div className="glass-card p-4 rounded-2xl border-l-4 border-blue-400 bg-blue-50/50 animate-slide-up" style={{ animationDelay: '400ms' }}>
                     <div className="flex items-start gap-3">
                       <Users className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div>
@@ -823,10 +962,9 @@ export default function StaffDashboard() {
                   </div>
                 )
               }
-
               if (!hasRealAssignments && children.length > 0) {
                 return (
-                  <div className="glass-card p-4 rounded-2xl border-l-4 border-amber-400 bg-amber-50/50">
+                  <div className="glass-card p-4 rounded-2xl border-l-4 border-amber-400 bg-amber-50/50 animate-slide-up" style={{ animationDelay: '400ms' }}>
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                       <div>
@@ -841,83 +979,25 @@ export default function StaffDashboard() {
               }
               return null
             })()}
-          </>
-        )}
 
+          </div>
+        )}
+        {/* ── END HOME TAB ──────────────────────────────────────── */}
+
+        {/* ── CLASSES TAB ───────────────────────────────────────── */}
         {activeTab === 'classes' && (
-          <>
-            {/* Classes Tab */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">
-                My Classes
-              </h2>
-              <p className="text-gray-600">Manage your assigned classes and students</p>
-            </div>
-
-            {classesData.length === 0 ? (
-              <div className="text-center py-12">
-                <GraduationCap className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">No Classes Assigned</h3>
-                <p className="text-gray-500">You haven't been assigned to any classes yet.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {classesData.map((classData) => (
-                  <div key={classData.id} className="glass-card p-4 rounded-2xl">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-800">{classData.name}</h3>
-                      <span className="text-sm text-gray-500">{classData.time}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-3">
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-primary-blue">{classData.children.length}</p>
-                        <p className="text-xs text-gray-600">Students</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-accent-green">
-                          {getAttendanceStats(classData.children, classData.id).present}
-                        </p>
-                        <p className="text-xs text-gray-600">Present Today</p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedClass(classData)
-                          setShowAttendance(true)
-                        }}
-                        className="flex-1 py-2 px-3 bg-primary-blue/10 text-primary-blue rounded-lg text-sm font-medium hover:bg-primary-blue/20 transition-colors"
-                      >
-                        Take Attendance
-                      </button>
-                      <button
-                        onClick={() => setSelectedClass(classData)}
-                        className="flex-1 py-2 px-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                      >
-                        View Students
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <ClassManagement />
         )}
 
+        {/* ── MESSAGES TAB ──────────────────────────────────────── */}
         {activeTab === 'messages' && (
-          <>
-            {/* Messages Tab */}
+          <div className="space-y-6">
             <div className="mb-6">
-              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">
-                Messages
-              </h2>
+              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">Messages</h2>
               <p className="text-gray-600">Communicate with parents and staff</p>
             </div>
 
             <div className="space-y-4">
-              {/* Quick Send Button */}
               <button
                 onClick={() => setShowMessageModal(true)}
                 className="w-full glass-card p-4 rounded-2xl text-left hover:shadow-lg transition-all"
@@ -933,7 +1013,6 @@ export default function StaffDashboard() {
                 </div>
               </button>
 
-              {/* Recent Messages */}
               <div className="glass-card p-4 rounded-2xl">
                 <h3 className="font-semibold text-gray-800 mb-3">Recent Messages</h3>
                 {(() => {
@@ -976,38 +1055,29 @@ export default function StaffDashboard() {
                 })()}
               </div>
             </div>
-          </>
+          </div>
         )}
 
+        {/* ── PROFILE TAB ───────────────────────────────────────── */}
         {activeTab === 'profile' && (
-          <>
-            {/* Profile Tab */}
+          <div className="space-y-4">
             <div className="mb-6">
-              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">
-                My Profile
-              </h2>
+              <h2 className="text-2xl font-heading font-bold text-gray-800 mb-1">My Profile</h2>
               <p className="text-gray-600">Manage your account and settings</p>
             </div>
 
             <div className="space-y-4">
-              {/* Profile Info */}
               <div className="glass-card p-4 rounded-2xl">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="relative">
                     <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-blue to-primary-coral p-[2px]">
                       <div className="w-full h-full rounded-2xl bg-white flex items-center justify-center relative overflow-hidden">
                         {staffProfile?.avatar_url ? (
-                          <img
-                            src={staffProfile.avatar_url}
-                            alt="Profile"
-                            className="w-full h-full object-cover"
-                          />
+                          <img src={staffProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
                           <span className="font-bold text-lg text-gray-600 uppercase tracking-wide">
                             {staffProfile?.full_name ?
-                              staffProfile.full_name.split(' ').map(n => n[0]).join('') :
-                              'ST'
-                            }
+                              staffProfile.full_name.split(' ').map(n => n[0]).join('') : 'ST'}
                           </span>
                         )}
                       </div>
@@ -1044,7 +1114,6 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              {/* Settings */}
               <div className="glass-card p-4 rounded-2xl">
                 <h3 className="font-semibold text-gray-800 mb-3">Settings</h3>
                 <div className="space-y-3">
@@ -1069,7 +1138,6 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              {/* Logout */}
               <button
                 onClick={handleLogout}
                 className="w-full glass-card p-4 rounded-2xl text-left hover:bg-red-50 transition-colors border border-red-200"
@@ -1084,8 +1152,9 @@ export default function StaffDashboard() {
                 </div>
               </button>
             </div>
-          </>
+          </div>
         )}
+
       </main>
 
       {/* Floating Action Button */}
@@ -1107,9 +1176,7 @@ export default function StaffDashboard() {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
-                  isActive
-                    ? 'bg-primary-blue/10 text-primary-blue'
-                    : 'text-gray-600 hover:bg-gray-100'
+                  isActive ? 'bg-primary-blue/10 text-primary-blue' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 <Icon size={20} className={isActive ? 'text-primary-blue' : 'text-gray-600'} />
@@ -1122,12 +1189,11 @@ export default function StaffDashboard() {
         </div>
       </nav>
 
+      {/* ── MODALS ────────────────────────────────────────────────── */}
+
       {/* Attendance Modal */}
       {showAttendanceModal && selectedClass && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => {
-          // Close modal when clicking outside (on backdrop)
-          setShowAttendanceModal(false)
-        }}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAttendanceModal(false)}>
           <div className="bg-white rounded-3xl max-w-sm w-full max-h-[90vh] overflow-hidden shadow-2xl animate-fade-scale" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between">
@@ -1136,16 +1202,11 @@ export default function StaffDashboard() {
                     <img src="/src/assets/images/logo.png" alt="ChildTrack Logo" className="w-6 h-6 object-cover rounded-xl" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-heading font-bold text-gray-800">
-                      Take Attendance
-                    </h2>
+                    <h2 className="text-lg font-heading font-bold text-gray-800">Take Attendance</h2>
                     <p className="text-sm text-gray-600">{selectedClass.name}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowAttendanceModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowAttendanceModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                   <X size={20} className="text-gray-600" />
                 </button>
               </div>
@@ -1166,7 +1227,6 @@ export default function StaffDashboard() {
                           <p className="text-xs text-gray-500">{child.age} years old</p>
                         </div>
                       </div>
-
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => markAttendance(selectedClass.id, child.id, 'present')}
@@ -1175,7 +1235,6 @@ export default function StaffDashboard() {
                               ? 'bg-accent-green text-white shadow-lg'
                               : 'bg-white border border-gray-200 text-gray-600 hover:bg-accent-green/10 hover:border-accent-green'
                           }`}
-                          title="Present"
                         >
                           <Check size={16} />
                         </button>
@@ -1186,7 +1245,6 @@ export default function StaffDashboard() {
                               ? 'bg-red-500 text-white shadow-lg'
                               : 'bg-white border border-gray-200 text-gray-600 hover:bg-red-50 hover:border-red-300'
                           }`}
-                          title="Absent"
                         >
                           <X size={16} />
                         </button>
@@ -1205,10 +1263,7 @@ export default function StaffDashboard() {
                     return `${stats.marked}/${stats.total} marked`
                   })()}
                 </div>
-                <button
-                  onClick={() => setShowAttendanceModal(false)}
-                  className="px-4 py-2 bg-primary-blue text-white rounded-xl font-medium hover:shadow-lg transition-all text-sm"
-                >
+                <button onClick={() => setShowAttendanceModal(false)} className="px-4 py-2 bg-primary-blue text-white rounded-xl font-medium hover:shadow-lg transition-all text-sm">
                   Done
                 </button>
               </div>
@@ -1228,16 +1283,11 @@ export default function StaffDashboard() {
                     <Camera className="w-5 h-5 text-blue-500" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-heading font-bold text-gray-800">
-                      Upload Photos
-                    </h2>
+                    <h2 className="text-lg font-heading font-bold text-gray-800">Upload Photos</h2>
                     <p className="text-sm text-gray-600">Share today's activities</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowPhotoUpload(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowPhotoUpload(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                   <X size={20} className="text-gray-600" />
                 </button>
               </div>
@@ -1247,42 +1297,39 @@ export default function StaffDashboard() {
               <div className="space-y-4">
                 <button
                   onClick={handlePhotoUpload}
-                  className="w-full p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors group"
+                  disabled={uploading}
+                  className="w-full p-8 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors group disabled:opacity-50"
                 >
-                  <Camera className="w-12 h-12 mx-auto mb-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                  <p className="text-gray-600 group-hover:text-blue-600 font-medium">Tap to select photos</p>
-                  <p className="text-sm text-gray-500 mt-1">PNG, JPG up to 10MB each</p>
+                  {uploading ? (
+                    <div className="flex flex-col items-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-3" />
+                      <p className="text-gray-600">Uploading...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Camera className="w-12 h-12 mx-auto mb-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                      <p className="text-gray-600 group-hover:text-blue-600 font-medium">Tap to select photos</p>
+                      <p className="text-sm text-gray-500 mt-1">PNG, JPG up to 10MB each</p>
+                    </>
+                  )}
                 </button>
 
-                {(() => {
-                  const allPhotos = JSON.parse(localStorage.getItem('childtrack_photos') || '[]')
-                  const recentPhotos = allPhotos.slice(0, 6)
-
-                  return recentPhotos.length > 0 && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold text-gray-800 text-sm">Recent Uploads</h3>
-                      <div className="grid grid-cols-3 gap-2">
-                        {recentPhotos.map((photo) => (
-                          <div key={photo.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                            <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
-                          </div>
-                        ))}
-                      </div>
+                {uploadedPhotos.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-gray-800 text-sm">Recent Uploads</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {uploadedPhotos.slice(-6).map((photo) => (
+                        <div key={photo.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                          <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
                     </div>
-                  )
-                })()}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Hidden file input */}
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handlePhotoFileChange}
-              className="hidden"
-            />
+            <input ref={photoInputRef} type="file" accept="image/*" multiple onChange={handlePhotoFileChange} className="hidden" />
           </div>
         </div>
       )}
@@ -1298,16 +1345,11 @@ export default function StaffDashboard() {
                     <BookOpen className="w-5 h-5 text-purple-500" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-heading font-bold text-gray-800">
-                      Daily Diary
-                    </h2>
+                    <h2 className="text-lg font-heading font-bold text-gray-800">Daily Diary</h2>
                     <p className="text-sm text-gray-600">Record today's activities</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowDiaryModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowDiaryModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                   <X size={20} className="text-gray-600" />
                 </button>
               </div>
@@ -1323,10 +1365,7 @@ export default function StaffDashboard() {
             </div>
 
             <div className="p-4 border-t border-gray-100 flex gap-3">
-              <button
-                onClick={() => setShowDiaryModal(false)}
-                className="flex-1 py-3 px-4 border border-gray-200 rounded-xl font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => setShowDiaryModal(false)} className="flex-1 py-3 px-4 border border-gray-200 rounded-xl font-medium text-gray-600 hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
               <button
@@ -1352,16 +1391,11 @@ export default function StaffDashboard() {
                     <MessageSquare className="w-5 h-5 text-pink-500" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-heading font-bold text-gray-800">
-                      Send Message
-                    </h2>
+                    <h2 className="text-lg font-heading font-bold text-gray-800">Send Message</h2>
                     <p className="text-sm text-gray-600">Communicate with parents</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowMessageModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowMessageModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                   <X size={20} className="text-gray-600" />
                 </button>
               </div>
@@ -1374,9 +1408,7 @@ export default function StaffDashboard() {
                   <select
                     value={selectedParent?.id || ''}
                     onChange={(e) => {
-                      const parent = children.find(child =>
-                        child.profiles?.id === e.target.value
-                      )?.profiles
+                      const parent = children.find(child => child.profiles?.id === e.target.value)?.profiles
                       setSelectedParent(parent)
                     }}
                     className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-pink-400"
@@ -1384,9 +1416,7 @@ export default function StaffDashboard() {
                     <option value="">Choose a parent...</option>
                     {Array.from(new Set(children.map(child => child.profiles).filter(Boolean)))
                       .map(parent => (
-                        <option key={parent.id} value={parent.id}>
-                          {parent.full_name}
-                        </option>
+                        <option key={parent.id} value={parent.id}>{parent.full_name}</option>
                       ))}
                   </select>
                 </div>
@@ -1404,10 +1434,7 @@ export default function StaffDashboard() {
             </div>
 
             <div className="p-4 border-t border-gray-100 flex gap-3">
-              <button
-                onClick={() => setShowMessageModal(false)}
-                className="flex-1 py-3 px-4 border border-gray-200 rounded-xl font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => setShowMessageModal(false)} className="flex-1 py-3 px-4 border border-gray-200 rounded-xl font-medium text-gray-600 hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
               <button
@@ -1433,16 +1460,11 @@ export default function StaffDashboard() {
                     <Calendar className="w-5 h-5 text-orange-500" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-heading font-bold text-gray-800">
-                      Today's Schedule
-                    </h2>
+                    <h2 className="text-lg font-heading font-bold text-gray-800">Today's Schedule</h2>
                     <p className="text-sm text-gray-600">{new Date().toLocaleDateString()}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowScheduleModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                   <X size={20} className="text-gray-600" />
                 </button>
               </div>
@@ -1450,7 +1472,7 @@ export default function StaffDashboard() {
 
             <div className="p-4 max-h-[60vh] overflow-y-auto">
               <div className="space-y-4">
-                {classesData.map((classData, index) => (
+                {classesData.map((classData) => (
                   <div key={classData.id} className="glass-card p-4 rounded-xl">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-gray-800">{classData.name}</h3>

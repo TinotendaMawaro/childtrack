@@ -37,34 +37,44 @@ export default {
       backdropBlur: {
         'glass': '20px',
       },
-      animation: {
-        'fade-in': 'fadeIn 200ms ease',
-        'slide-up': 'slideUp 300ms ease',
-        'pulse-glow': 'pulseGlow 2s infinite',
-        'shimmer': 'shimmer 1.5s linear infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        shimmer: {
-          '0%': { 
-            backgroundPosition: '-200% 0' 
-          },
-          '100%': { 
-            backgroundPosition: '200% 0' 
-          },
-        },
-        pulseGlow: {
-          '0%, 100%': { boxShadow: '0 0 20px rgba(110, 231, 183, 0.3)' },
-          '50%': { boxShadow: '0 0 30px rgba(110, 231, 183, 0.6)' },
-        },
-      },
+       animation: {
+         'fade-in': 'fadeIn 200ms ease',
+         'slide-up': 'slideUp 300ms ease',
+         'pulse-glow': 'pulseGlow 2s infinite',
+         'shimmer': 'shimmer 1.5s linear infinite',
+         'fab-expand': 'fabExpand 400ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+         'fab-collapse': 'fabCollapse 300ms cubic-bezier(0.36, 0, 0.66, -0.56)',
+       },
+       keyframes: {
+         fadeIn: {
+           '0%': { opacity: '0' },
+           '100%': { opacity: '1' },
+         },
+         slideUp: {
+           '0%': { opacity: '0', transform: 'translateY(20px)' },
+           '100%': { opacity: '1', transform: 'translateY(0)' },
+         },
+         shimmer: {
+           '0%': { 
+             backgroundPosition: '-200% 0' 
+           },
+           '100%': { 
+             backgroundPosition: '200% 0' 
+           },
+         },
+         pulseGlow: {
+           '0%, 100%': { boxShadow: '0 0 20px rgba(110, 231, 183, 0.3)' },
+           '50%': { boxShadow: '0 0 30px rgba(110, 231, 183, 0.6)' },
+         },
+         fabExpand: {
+           '0%': { opacity: 0, transform: 'translate(-50%, -50%) scale(0.5)' },
+           '100%': { opacity: 1, transform: 'translate(-50%, -50%) scale(1)' },
+         },
+         fabCollapse: {
+           '0%': { opacity: 1, transform: 'translate(-50%, -50%) scale(1)' },
+           '100%': { opacity: 0, transform: 'translate(-50%, -50%) scale(0.5)' },
+         },
+       },
     },
   },
   plugins: [],

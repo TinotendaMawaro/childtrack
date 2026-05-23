@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_ui/shared_login_screen.dart';
 
 import 'screens/onboarding_screen.dart';
-import 'screens/login_screen.dart'; // Add this import
 import 'screens/parent_home_screen.dart'; // Add this import
 
 const supabaseUrl = 'https://lzkhjmtfvksxobxdjytb.supabase.co';
@@ -121,7 +122,10 @@ class ChildTrackParentApp extends StatelessWidget {
         ),
         GoRoute(
           path: '/login',
-          builder: (context, state) => const LoginScreen(),
+          builder: (context, state) => const SharedLoginScreen(
+            appTitle: 'ChildTrack Parent',
+            successRoute: '/parent',
+          ),
         ),
         GoRoute(
           path: '/parent',
@@ -130,22 +134,24 @@ class ChildTrackParentApp extends StatelessWidget {
       ],
       redirect: (context, state) {
         final session = Supabase.instance.client.auth.currentSession;
-        if (session == null && state.location != '/login') {
+        if (session == null && state.uri.path != '/login' && state.uri.path != '/onboarding') {
           return '/login';
         }
         return null;
       },
     );
 
-    return MaterialApp.router(
-      title: 'ChildTrack Parent',
-      debugShowCheckedModeBanner: false,
-      routerConfig: router,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryBlue),
-        scaffoldBackgroundColor: AppColors.softBackground,
-        textTheme: GoogleFonts.interTextTheme(),
+    return ProviderScope(
+      child: MaterialApp.router(
+        title: 'ChildTrack Parent',
+        debugShowCheckedModeBanner: false,
+        routerConfig: router,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryBlue),
+          scaffoldBackgroundColor: AppColors.softBackground,
+          textTheme: GoogleFonts.interTextTheme(),
+        ),
       ),
     );
   }
