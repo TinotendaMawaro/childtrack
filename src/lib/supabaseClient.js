@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
+// Use the browser's built-in crypto API
+if (typeof window !== 'undefined' && !globalThis.crypto && window.crypto) {
+  globalThis.crypto = window.crypto
+}
+
 // Global variable to persist across HMR updates in development
 const GLOBAL_KEY = '__CHILDTRACK_SUPABASE_CLIENT__'
 const CONNECTION_TESTED_KEY = '__CHILDTRACK_CONNECTION_TESTED__'

@@ -1,40 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import FullScreenLoader from './ui/FullScreenLoader'
 
-/**
- * SplashScreen
- *
- * Fast-start variant — completes within ~930 ms total so the app
- * doesn't feel sluggish on load.
- *
- * Timing breakdown
- *   7 ticks × 120 ms  = 840 ms  (progress bar fills)
- *   + 90 ms delay after 100% before onComplete fires
- *   = 930 ms total
- *
- * Logo dimensions
- *   Outer ring : w-18 h-18  (72 px)
- *   Inner logo : w-16 h-16  (64 px)
- */
-
 export default function SplashScreen({ onComplete }) {
   const [progress, setProgress] = useState(0)
+
+  const safeOnComplete = useCallback(() => {
+    try {
+      if (typeof onComplete === 'function') onComplete()
+    } catch (error) {
+      console.error('[SplashScreen] onComplete failed:', error)
+    }
+  }, [onComplete])
 
   useEffect(() => {
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(timer)
-          // Small grace pause so the "100 % / Ready!" state is visible
-          if (onComplete) setTimeout(onComplete, 90)
+          setTimeout(safeOnComplete, 90)
           return 100
         }
-        return prev + 17   // 7 ticks to reach 100
+        return prev + 17
       })
-    }, 120)               // 7 × 120 ms = 840 ms Fill time → under 1 s overall
+    }, 120)
     return () => clearInterval(timer)
-  }, [onComplete])
+  }, [safeOnComplete])
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-blue-400 via-orange-300 to-rose-400">

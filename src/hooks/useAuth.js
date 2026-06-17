@@ -10,9 +10,23 @@ export function useAuth() {
 
   useEffect(() => {
     console.log('[Auth] Initializing auth state...')
-    
-    // Get initial session
+    const AUTH_TIMEOUT_MS = 3000
+
+    const timeoutHandle = setTimeout(() => {
+      console.warn('[Auth] getSession timeout reached, forcing unauthenticated state')
+      setAuthLoading(false)
+    }, AUTH_TIMEOUT_MS)
+
+    let didResolve = false
+    const finish = () => {
+      if (!didResolve) {
+        didResolve = true
+        clearTimeout(timeoutHandle)
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session }, error }) => {
+      finish()
       console.log('[Auth] getSession result:', error ? error.message : 'success', session ? 'session exists' : 'no session')
       setSession(session)
       setAuthLoading(false)
@@ -21,22 +35,25 @@ export function useAuth() {
         setRoleLoading(true)
         fetchUserProfile(session.user.id).finally(() => setRoleLoading(false))
       }
+    }).catch((err) => {
+      finish()
+      console.error('[Auth] getSession failed:', err?.message || err)
+      setAuthLoading(false)
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        finish()
         setSession(session)
         setAuthLoading(false)
         if (session) {
           setRoleLoading(true)
           fetchUserProfile(session.user.id).finally(() => setRoleLoading(false))
-          // Restore from localStorage if available
           const saved = localStorage.getItem('supabase.auth.token')
           if (saved && !session.access_token) {
             try {
               const savedSession = JSON.parse(saved)
-              supabase.auth.setSession(savedSession)
+              await supabase.auth.setSession(savedSession)
             } catch (e) {
               localStorage.removeItem('supabase.auth.token')
             }
@@ -49,7 +66,10 @@ export function useAuth() {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeoutHandle)
+      subscription.unsubscribe()
+    }
   }, [])
 
 async function fetchUserProfile(userId) {

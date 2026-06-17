@@ -255,6 +255,8 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE PROCEDURE create_profile();
 
 -- ✅ CREATE TEST USERS (Run these AFTER tables are created)
+-- ⚠️ IMPORTANT: These set initial passwords and mark emails as confirmed.
+-- Users should reset passwords immediately after first login.
 
 -- ADMIN
 insert into auth.users (id, email, encrypted_password, email_confirmed_at)
@@ -314,6 +316,23 @@ where email in (
   'driver@allbright.com',
   'mabuto@allbright.com'
 );
+
+-- 🔄 ROLE UPDATES BY EMAIL
+update profiles
+set role = 'ADMIN'
+where email = 'admin@allbright.com';
+
+update profiles
+set role = 'PARENT'
+where email = 'tmawaro25@gmail.com';
+
+update profiles
+set role = 'DRIVER'
+where email = 'driver@allbright.com';
+
+update profiles
+set role = 'STAFF'
+where email = 'mabuto@allbright.com';
 
 -- ⚠️ IMPORTANT: Force password reset later - users should not keep 'money1' as password
 
