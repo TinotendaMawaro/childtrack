@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle, Edit, Trash2, Plus } from 'lucide-react'
+import { Search, ChevronDown, UserPlus, X, Download, Send, CheckCircle, XCircle, FileText, Clock, UserCheck, Award, Calendar, TrendingUp, Loader2, AlertCircle, Edit, Trash2, Plus, Users } from 'lucide-react'
 import LoadingSpinner from './ui/LoadingSpinner'
 import SkeletonTable from './ui/SkeletonTable'
 import { supabase } from '../lib/supabaseClient'
@@ -455,6 +455,57 @@ export default function RecruitmentScreen() {
 
   return (
     <div className="space-y-6">
+      {/* Applications summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="glass-card rounded-card p-5 card-hover animate-slide-up">
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-blue to-blue-400 flex items-center justify-center shadow-lg">
+              <Users size={24} className="text-white" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="font-heading font-bold text-2xl text-gray-800">{stats.total || 0}</p>
+            <p className="text-sm text-gray-500">Total Applicants</p>
+          </div>
+        </div>
+
+        <div className="glass-card rounded-card p-5 card-hover animate-slide-up" style={{ animationDelay: '50ms' }}>
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-yellow to-amber-400 flex items-center justify-center shadow-lg">
+              <Clock size={24} className="text-white" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="font-heading font-bold text-2xl text-gray-800">{stats.pending || 0}</p>
+            <p className="text-sm text-gray-500">Pending Review</p>
+          </div>
+        </div>
+
+        <div className="glass-card rounded-card p-5 card-hover animate-slide-up" style={{ animationDelay: '100ms' }}>
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-purple to-violet-400 flex items-center justify-center shadow-lg">
+              <Calendar size={24} className="text-white" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="font-heading font-bold text-2xl text-gray-800">{stats.interview || 0}</p>
+            <p className="text-sm text-gray-500">Interview Scheduled</p>
+          </div>
+        </div>
+
+        <div className="glass-card rounded-card p-5 card-hover animate-slide-up" style={{ animationDelay: '150ms' }}>
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-green to-emerald-400 flex items-center justify-center shadow-lg">
+              <UserCheck size={24} className="text-white" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="font-heading font-bold text-2xl text-gray-800">{stats.hired || 0}</p>
+            <p className="text-sm text-gray-500">Hired</p>
+          </div>
+        </div>
+      </div>
+
       {/* Top Bar */}
       <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">

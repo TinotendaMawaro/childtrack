@@ -164,6 +164,8 @@ export default function ChildStatusManager() {
     setUpdating(true)
 
     try {
+      const currentStatus = selectedChild.status || 'ACTIVE'
+
       // Update child status
       const { error: updateError } = await supabase
         .from('children')
@@ -308,8 +310,22 @@ export default function ChildStatusManager() {
                   <tr key={child.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center">
-                          <span className="text-lg">{child.photo_url || '👶'}</span>
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-blue to-primary-coral flex items-center justify-center overflow-hidden">
+                          {child.photo_url && child.photo_url.startsWith('http') ? (
+                            <img
+                              src={child.photo_url}
+                              alt={child.full_name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none'
+                                const fallback = e.target.nextElementSibling
+                                if (fallback) fallback.classList.remove('hidden')
+                              }}
+                            />
+                          ) : null}
+                          <span className={`text-lg ${child.photo_url?.startsWith('http') ? 'hidden' : ''}`}>
+                            {child.photo_url || '👶'}
+                          </span>
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">{child.full_name}</p>

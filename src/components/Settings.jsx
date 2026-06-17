@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { ChevronDown, Save, School, Calendar, Users, Bell, FileText, Edit3, Trash2, CheckCircle, AlertCircle, Clock, Mail, Phone, Globe } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronDown, Save, School, Calendar, Users, Bell, FileText, Edit3, Trash2, CheckCircle, AlertCircle, Clock, Mail, Phone, Globe, Loader2 } from 'lucide-react'
+import { supabase } from '../lib/supabaseClient'
 
-// Accordion Item Component
 function AccordionItem({ title, icon: Icon, children, isOpen, onToggle }) {
   return (
     <div className="glass-card rounded-xl overflow-hidden shadow-lg">
@@ -17,7 +17,7 @@ function AccordionItem({ title, icon: Icon, children, isOpen, onToggle }) {
         </div>
         <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
-      <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+      <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         <div className="p-6 pt-0 space-y-4 border-t border-gray-100">
           {children}
         </div>
@@ -26,177 +26,231 @@ function AccordionItem({ title, icon: Icon, children, isOpen, onToggle }) {
   )
 }
 
-// School Profile Section
-function SchoolProfileSection() {
-  const [editing, setEditing] = useState(false)
-  
+function SchoolProfileSection({ org, onUpdate, saving }) {
+  const [form, setForm] = useState({
+    name: '', email: '', phone: '', address: '', timezone: 'Africa/Johannesburg'
+  })
+
+  useEffect(() => {
+    if (org) {
+      setForm({
+        name: org.name || '',
+        email: org.email || '',
+        phone: org.phone || '',
+        address: org.address || '',
+        timezone: org.timezone || 'Africa/Johannesburg'
+      })
+    }
+  }, [org])
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setForm(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    await onUpdate(form)
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h4 className="font-semibold text-gray-800">School Information</h4>
-        <button 
-          onClick={() => setEditing(!editing)}
-          className="text-sm text-primary-blue hover:underline flex items-center gap-1"
-        >
-          <Edit3 size={14} />
-          {editing ? 'Cancel' : 'Edit'}
-        </button>
-      </div>
-      
+    <form onSubmit={handleSave} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">School Name</label>
-          <input 
-            defaultValue="ChildTrack Nursery & Preschool"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">License #</label>
-          <input 
-            defaultValue="NRC-2024-001"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Established</label>
-          <input 
-            defaultValue="2018"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
-          <input 
-            defaultValue="120 children"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
-          />
-        </div>
-      </div>
-      
-      <div className="glass-card-inner p-4 rounded-xl">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
-        <textarea 
-          rows={2}
-          defaultValue="123 ChildCare Lane, Happy Valley, HV 12345"
-          className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70 resize-vertical"
-          disabled={!editing}
-        />
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-          <input 
-            defaultValue="(555) 123-4567"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
+          <input
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
+            required
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-          <input 
-            defaultValue="info@childtrack.com"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
+          <input
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
-          <input 
-            defaultValue="www.childtrack.com"
-            className="w-full p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 bg-white/70"
-            disabled={!editing}
+          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+          <input
+            name="phone"
+            value={form.phone}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input"
           />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Timezone</label>
+          <select
+            name="timezone"
+            value={form.timezone}
+            onChange={handleChange}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input appearance-none"
+          >
+            <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">America/New_York (EST)</option>
+            <option value="Europe/London">Europe/London (GMT)</option>
+          </select>
+        </div>
       </div>
-    </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+        <textarea
+          name="address"
+          value={form.address}
+          onChange={handleChange}
+          rows={2}
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary-blue/30 glass-input resize-none"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-accent-green to-emerald-400 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={16} />}
+          {saving ? 'Saving...' : 'Save Profile'}
+        </button>
+      </div>
+    </form>
   )
 }
 
-// Academic Calendar Section
 function AcademicCalendarSection() {
-  const holidays = [
-    { date: '2024-12-25', name: 'Christmas', type: 'holiday' },
-    { date: '2024-01-01', name: 'New Year', type: 'holiday' },
-    { date: '2024-07-04', name: 'Summer Break', type: 'break' },
-  ]
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchCalendar = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('calendar_events')
+          .select('*')
+          .order('event_date', { ascending: true })
+
+        if (error) throw error
+        setEvents(data || [])
+      } catch (err) {
+        console.error('Error fetching calendar events:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCalendar()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-blue"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <h4 className="font-semibold text-gray-800">2024-2025 Academic Calendar</h4>
-        <span className="text-xs px-2 py-1 bg-accent-green/10 text-accent-green rounded-full">Current</span>
+        <h4 className="font-semibold text-gray-800">Academic Calendar</h4>
       </div>
-      
-      <div className="glass-card-inner p-4 rounded-xl overflow-x-auto">
-        <table className="w-full min-w-[500px]">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="py-3 text-left text-sm font-semibold text-gray-700">Date</th>
-              <th className="py-3 text-left text-sm font-semibold text-gray-700">Event</th>
-              <th className="py-3 text-left text-sm font-semibold text-gray-700">Type</th>
-              <th className="py-3 text-right text-sm font-semibold text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {holidays.map((holiday, i) => (
-              <tr key={i} className="border-b border-gray-100 hover:bg-white/50">
-                <td className="py-3">{new Date(holiday.date).toLocaleDateString()}</td>
-                <td className="py-3 font-medium text-gray-800">{holiday.name}</td>
-                <td className="py-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${
-                    holiday.type === 'holiday' ? 'bg-red-100 text-red-600' : 'bg-accent-yellow/10 text-amber-600'
-                  }`}>
-                    {holiday.type}
-                  </span>
-                </td>
-                <td className="py-3 text-right">
-                  <div className="flex gap-1 justify-end">
-                    <button className="p-1.5 text-primary-blue hover:bg-primary-blue/10 rounded-lg transition-colors">
-                      <Edit3 size={14} />
-                    </button>
-                    <button className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
+
+      {events.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          No calendar events configured yet.
+        </div>
+      ) : (
+        <div className="glass-card-inner rounded-xl overflow-x-auto">
+          <table className="w-full min-w-[500px]">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="py-3 text-left text-sm font-semibold text-gray-700">Date</th>
+                <th className="py-3 text-left text-sm font-semibold text-gray-700">Event</th>
+                <th className="py-3 text-left text-sm font-semibold text-gray-700">Type</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      
-      <button className="glow-mint px-6 py-2.5 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 mx-auto">
-        <Calendar size={18} />
-        Add Holiday/Event
-      </button>
+            </thead>
+            <tbody>
+              {events.map((event, i) => (
+                <tr key={event.id || i} className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="py-3 text-sm text-gray-700">
+                    {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="py-3 text-sm font-medium text-gray-800">{event.title || event.name}</td>
+                  <td className="py-3">
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      event.event_type === 'holiday' ? 'bg-red-100 text-red-600' :
+                      event.event_type === 'break' ? 'bg-accent-yellow/10 text-amber-600' :
+                      'bg-primary-blue/10 text-primary-blue'
+                    }`}>
+                      {event.event_type || 'event'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
 
-// User Roles Section
 function UserRolesSection() {
-  const roles = [
-    { name: 'Admin', users: 3, permissions: ['All'], color: 'bg-primary-blue/10' },
-    { name: 'Teacher', users: 12, permissions: ['Children', 'Classes', 'Attendance'], color: 'bg-accent-green/10' },
-    { name: 'Assistant', users: 8, permissions: ['Children', 'Attendance'], color: 'bg-accent-purple/10' },
-  ]
+  const [roles, setRoles] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchRoles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('role_permissions')
+          .select('role, permission, resource')
+
+        if (error) throw error
+
+        const grouped = (data || []).reduce((acc, row) => {
+          if (!acc[row.role]) acc[row.role] = { name: row.role, permissions: [] }
+          acc[row.role].permissions.push(row.permission)
+          return acc
+        }, {})
+
+        setRoles(Object.values(grouped))
+      } catch (err) {
+        console.error('Error fetching roles:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchRoles()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-blue"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <h4 className="font-semibold text-gray-800">User Roles & Permissions</h4>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {roles.map((role, i) => (
-          <div key={i} className={`glass-card-inner p-5 rounded-xl ${role.color}`}>
+          <div key={i} className="glass-card-inner p-5 rounded-xl">
             <div className="flex items-start justify-between mb-4">
               <h5 className="font-bold text-lg text-gray-800">{role.name}</h5>
-              <span className="text-2xl font-bold text-primary-blue">{role.users}</span>
             </div>
             <ul className="space-y-1">
               {role.permissions.map((perm, j) => (
@@ -209,87 +263,142 @@ function UserRolesSection() {
           </div>
         ))}
       </div>
-      
-      <button className="glow-mint px-6 py-2.5 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all mx-auto">
-        Manage Roles
-      </button>
     </div>
   )
 }
 
-// Notifications Settings
-function NotificationsSection() {
+function NotificationsSection({ settings, onUpdate, saving }) {
+  const [form, setForm] = useState({
+    payment_reminders: true,
+    attendance_alerts: true,
+    new_applications: false,
+    system_alerts: true
+  })
+
+  useEffect(() => {
+    if (settings) {
+      setForm({
+        payment_reminders: settings.payment_reminders ?? true,
+        attendance_alerts: settings.attendance_alerts ?? true,
+        new_applications: settings.new_applications ?? false,
+        system_alerts: settings.system_alerts ?? true
+      })
+    }
+  }, [settings])
+
+  const toggle = (key) => {
+    setForm(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    await onUpdate({ notification_settings: form })
+  }
+
   return (
-    <div className="space-y-4">
-      <h4 className="font-semibold text-gray-800">Notifications</h4>
-      
-      <div className="space-y-3">
-        <label className="flex items-center gap-3 p-4 rounded-xl bg-white/50 hover:bg-white/70 cursor-pointer group">
-          <input type="checkbox" defaultChecked className="w-5 h-5 rounded text-primary-blue focus:ring-primary-blue" />
+    <form onSubmit={handleSave} className="space-y-3">
+      {[
+        { key: 'payment_reminders', title: 'Payment Reminders', desc: 'Notify parents about overdue fees' },
+        { key: 'attendance_alerts', title: 'Attendance Alerts', desc: 'Low attendance notifications' },
+        { key: 'new_applications', title: 'New Applications', desc: 'Recruitment pipeline updates' },
+        { key: 'system_alerts', title: 'System Alerts', desc: 'Critical system notifications' }
+      ].map(item => (
+        <label key={item.key} className="flex items-center gap-3 p-4 rounded-xl bg-white/50 hover:bg-white/70 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={form[item.key]}
+            onChange={() => toggle(item.key)}
+            className="w-5 h-5 rounded text-primary-blue focus:ring-primary-blue"
+          />
           <div>
-            <p className="font-medium text-gray-800">Payment Reminders</p>
-            <p className="text-sm text-gray-500 group-hover:text-gray-600">Notify parents about overdue fees</p>
+            <p className="font-medium text-gray-800">{item.title}</p>
+            <p className="text-sm text-gray-500 group-hover:text-gray-600">{item.desc}</p>
           </div>
         </label>
-        
-        <label className="flex items-center gap-3 p-4 rounded-xl bg-white/50 hover:bg-white/70 cursor-pointer group">
-          <input type="checkbox" defaultChecked className="w-5 h-5 rounded text-primary-blue focus:ring-primary-blue" />
-          <div>
-            <p className="font-medium text-gray-800">Attendance Alerts</p>
-            <p className="text-sm text-gray-500 group-hover:text-gray-600">Low attendance notifications</p>
-          </div>
-        </label>
-        
-        <label className="flex items-center gap-3 p-4 rounded-xl bg-white/50 hover:bg-white/70 cursor-pointer group">
-          <input type="checkbox" className="w-5 h-5 rounded text-primary-blue focus:ring-primary-blue" />
-          <div>
-            <p className="font-medium text-gray-800">New Applications</p>
-            <p className="text-sm text-gray-500 group-hover:text-gray-600">Recruitment pipeline updates</p>
-          </div>
-        </label>
+      ))}
+
+      <div className="flex justify-end pt-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-accent-green to-emerald-400 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={16} />}
+          {saving ? 'Saving...' : 'Save Notifications'}
+        </button>
       </div>
-    </div>
+    </form>
   )
 }
 
-// System Logs Section
 function SystemLogsSection() {
-  const logs = [
-    { time: '2:45 PM', user: 'Admin', action: 'Updated staff profile', ip: '192.168.1.100' },
-    { time: '2:30 PM', user: 'Maria G.', action: 'Marked attendance', ip: '192.168.1.101' },
-    { time: '1:15 PM', user: 'System', action: 'Backup completed', ip: '-' },
-    { time: '12:00 PM', user: 'John S.', action: 'Added new child', ip: '192.168.1.102' },
-  ]
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('auth_audit_log')
+          .select(`
+            *,
+            user:user_profiles(full_name)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(50)
+
+        if (error) throw error
+        setLogs(data || [])
+      } catch (err) {
+        console.error('Error fetching logs:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchLogs()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-blue"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h4 className="font-semibold text-gray-800">Recent System Activity</h4>
-        <button className="text-sm text-primary-blue hover:underline flex items-center gap-1">
-<FileText size={14} />
-          Export Logs
-        </button>
       </div>
-      
-      <div className="glass-card-inner rounded-xl max-h-64 overflow-y-auto">
-        <div className="divide-y divide-gray-100">
-          {logs.map((log, i) => (
-            <div key={i} className="p-4 hover:bg-white/50 transition-colors">
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-gray-500 w-16">{log.time}</span>
-                <span className="font-medium text-gray-800">{log.user}</span>
-                <span className="text-gray-600 flex-1">{log.action}</span>
-                <span className="text-xs text-gray-400">{log.ip}</span>
-              </div>
-            </div>
-          ))}
+
+      {logs.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          No system logs available.
         </div>
-      </div>
+      ) : (
+        <div className="glass-card-inner rounded-xl max-h-96 overflow-y-auto">
+          <div className="divide-y divide-gray-100">
+            {logs.map((log, i) => (
+              <div key={log.id || i} className="p-4 hover:bg-white/50 transition-colors">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-gray-500 w-20">
+                    {log.created_at ? new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                  </span>
+                  <span className="font-medium text-gray-800">{log.user?.full_name || log.user_id?.slice(0, 8) || 'System'}</span>
+                  <span className="text-gray-600 flex-1">{log.action}</span>
+                  <span className="text-xs text-gray-400">{log.ip_address || '-'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-// Main Settings Screen
 export default function SettingsScreen() {
   const [openSections, setOpenSections] = useState({
     school: true,
@@ -298,6 +407,94 @@ export default function SettingsScreen() {
     notifications: false,
     logs: false,
   })
+
+  const [org, setOrg] = useState(null)
+  const [notificationSettings, setNotificationSettings] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
+
+  useEffect(() => {
+    fetchSettings()
+  }, [])
+
+  const fetchSettings = async () => {
+    try {
+      const { data: orgData } = await supabase
+        .from('organization')
+        .select('*')
+        .limit(1)
+        .maybeSingle()
+
+      if (orgData) setOrg(orgData)
+
+      // Notification settings can be stored in organization.settings JSONB or a separate table
+      // For now, we'll use the settings JSONB column if available
+      if (orgData?.settings) {
+        setNotificationSettings(orgData.settings)
+      }
+    } catch (err) {
+      console.error('Error fetching settings:', err)
+    }
+  }
+
+  const handleOrgUpdate = async (formData) => {
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('organization')
+        .update({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          address: formData.address,
+          timezone: formData.timezone,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', org.id)
+
+      if (error) throw error
+
+      setOrg(prev => ({ ...prev, ...formData }))
+      setMessage({ type: 'success', text: 'School profile updated successfully!' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err) {
+      console.error('Error updating organization:', err)
+      setMessage({ type: 'error', text: 'Failed to update: ' + err.message })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleNotificationUpdate = async (formData) => {
+    setSaving(true)
+    try {
+      const updatedSettings = {
+        ...(org?.settings || {}),
+        ...formData
+      }
+
+      const { error } = await supabase
+        .from('organization')
+        .update({
+          settings: updatedSettings,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', org.id)
+
+      if (error) throw error
+
+      setNotificationSettings(updatedSettings)
+      setMessage({ type: 'success', text: 'Notification settings saved!' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err) {
+      console.error('Error updating notifications:', err)
+      setMessage({ type: 'error', text: 'Failed to save: ' + err.message })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const toggleSection = (section) => {
     setOpenSections(prev => ({
@@ -310,8 +507,13 @@ export default function SettingsScreen() {
     <div className="max-w-4xl space-y-8">
       <div className="flex items-center gap-3">
         <h1 className="font-heading font-bold text-3xl text-gray-800">Settings</h1>
-        <span className="text-sm px-3 py-1 bg-accent-green/10 text-accent-green rounded-full font-medium">Live</span>
       </div>
+
+      {message && (
+        <div className={`p-4 rounded-xl ${message.type === 'success' ? 'bg-accent-green/10 text-accent-green border border-accent-green/20' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+          {message.text}
+        </div>
+      )}
 
       <div className="space-y-6">
         <AccordionItem
@@ -320,7 +522,11 @@ export default function SettingsScreen() {
           isOpen={openSections.school}
           onToggle={() => toggleSection('school')}
         >
-          <SchoolProfileSection />
+          {org ? (
+            <SchoolProfileSection org={org} onUpdate={handleOrgUpdate} saving={saving} />
+          ) : (
+            <div className="text-center py-8 text-gray-500">Loading school profile...</div>
+          )}
         </AccordionItem>
 
         <AccordionItem
@@ -347,7 +553,11 @@ export default function SettingsScreen() {
           isOpen={openSections.notifications}
           onToggle={() => toggleSection('notifications')}
         >
-          <NotificationsSection />
+          <NotificationsSection
+            settings={notificationSettings}
+            onUpdate={handleNotificationUpdate}
+            saving={saving}
+          />
         </AccordionItem>
 
         <AccordionItem
@@ -359,17 +569,6 @@ export default function SettingsScreen() {
           <SystemLogsSection />
         </AccordionItem>
       </div>
-
-      <div className="pt-8 border-t border-gray-100 flex justify-end gap-3">
-        <button className="px-8 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-all">
-          Cancel
-        </button>
-        <button className="glow-mint px-8 py-3 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all flex items-center gap-2 bg-gradient-to-r from-accent-green to-emerald-400">
-          <Save size={20} />
-          Save All Changes
-        </button>
-      </div>
     </div>
   )
 }
-

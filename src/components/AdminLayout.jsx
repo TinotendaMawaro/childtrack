@@ -12,6 +12,7 @@ import ChildStatusManager from './ChildStatusManager'
 import StatusAuditTrail from './StatusAuditTrail'
 import SettingsPage from './Settings'
 import ProfilePage from './ProfilePage'
+import TransportManagement from './TransportManagement'
 
 // Placeholder Recruitment Screen
 function RecruitmentScreen() {
@@ -351,10 +352,7 @@ export default function AdminLayout() {
       case 'finance':
         return <FinanceManagement />
       case 'transport':
-        return <div className="glass-card rounded-3xl p-12 text-center">
-          <h3 className="font-heading text-xl font-bold text-gray-800 mb-4">Transport</h3>
-          <p className="text-gray-600">Coming soon...</p>
-        </div>
+        return <TransportManagement />
       case 'recruitment':
         return <RecruitmentScreen />
       case 'settings':
